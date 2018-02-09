@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -126,7 +127,7 @@ func extrapolatedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Valu
 	return resultVector
 }
 
-func exactRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
+func extendedRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
 	ms := arg.(*MatrixSelector)
 	// XXX: Hack for including at least one non-stale point before the beginning of the range.
 	ms.Range += LookbackDelta
@@ -150,17 +151,17 @@ func exactRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
 		if len(points)-firstPoint < 2 {
 			continue
 		}
-		sampledInterval := float64(points[len(points)-1].T - points[firstPoint].T)
-		intervalThreshold := sampledInterval / float64(len(points)-1-firstPoint) * 1.1
+		sampledRange := float64(points[len(points)-1].T - points[firstPoint].T)
+		intervalThreshold := sampledRange / float64(len(points)-1-firstPoint) * 1.1
 
-		// If the last point before the range is too far from rangeStart, drop it.
+		// If the point before the range is too far from rangeStart, drop it.
 		if float64(rangeStart-points[firstPoint].T) > intervalThreshold {
 			firstPoint++
 			if len(points)-firstPoint < 2 {
 				continue
 			}
-			sampledInterval = float64(points[len(points)-1].T - points[firstPoint].T)
-			intervalThreshold = sampledInterval / float64(len(points)-1-firstPoint) * 1.1
+			sampledRange = float64(points[len(points)-1].T - points[firstPoint].T)
+			intervalThreshold = sampledRange / float64(len(points)-1-firstPoint) * 1.1
 		}
 
 		var (
@@ -177,20 +178,35 @@ func exactRate(ev *evaluator, arg Expr, isCounter bool, isRate bool) Value {
 			}
 		}
 		resultValue := points[len(points)-1].V - points[firstPoint].V + counterCorrection
+		fmt.Println("resultValue:", resultValue)
 
+		// Range that the increase/rate should be adjusted to.
+		var adjustToRange float64
+		// Duration between last sample and boundary of range.
+		durationToEnd := float64(rangeEnd - points[len(points)-1].T)
+		if points[firstPoint].T <= rangeStart && durationToEnd < intervalThreshold {
+			// If the points cover the whole range (i.e. they start just before the
+			// range start and end just before the range end) the rate/increase
+			// should be calculated over the requested range.
+			adjustToRange = float64(durationMilliseconds(ms.Range))
+		} else {
+			// If the points don't cover the whole range, start with the sampled
+			// range and extrapolate/interpolate precisely to the end that's close
+			// enough (if any), to give us a smooth ramp-up/ramp-down.
+			adjustToRange = sampledRange
+			//			if points[firstPoint].T <= rangeStart {
+			//				// Samples cross the range start, but not the range end. "Drop" the
+			//				// increase before range start (i.e. interpolate to range start only).
+			//				adjustToRange -= float64(rangeStart - points[firstPoint].T)
+			//			} else if durationToEnd < intervalThreshold {
+			//				// Samples almost "touch" the range end, extrapolate to range end.
+			//				adjustToRange += durationToEnd
+			//			}
+		}
+		fmt.Println("adjustToRange:", adjustToRange, "sampledRange:", sampledRange)
+		resultValue = resultValue * (adjustToRange / sampledRange)
 		if isRate {
-			// Duration between last sample and boundary of range.
-			durationToEnd := float64(rangeEnd - points[len(points)-1].T)
-			if points[firstPoint].T < rangeStart && durationToEnd < intervalThreshold {
-				// If the points cover the whole range (i.e. they start just before the
-				// range start and end just before the range end) the rate is the
-				// increase divided by the sampled interval.
-				resultValue = resultValue / (sampledInterval / 1000)
-			} else {
-				// If the points don't cover the whole range, the rate is the increase
-				// divided by the range length.
-				resultValue = resultValue / ms.Range.Seconds()
-			}
+			resultValue = resultValue / ms.Range.Seconds()
 		}
 
 		resultVector = append(resultVector, Sample{
@@ -218,17 +234,17 @@ func funcIncrease(ev *evaluator, args Expressions) Value {
 
 // === xdelta(Matrix ValueTypeMatrix) Vector ===
 func funcXdelta(ev *evaluator, args Expressions) Value {
-	return exactRate(ev, args[0], false, false)
+	return extendedRate(ev, args[0], false, false)
 }
 
 // === xrate(node ValueTypeMatrix) Vector ===
 func funcXrate(ev *evaluator, args Expressions) Value {
-	return exactRate(ev, args[0], true, true)
+	return extendedRate(ev, args[0], true, true)
 }
 
 // === xincrease(node ValueTypeMatrix) Vector ===
 func funcXincrease(ev *evaluator, args Expressions) Value {
-	return exactRate(ev, args[0], true, false)
+	return extendedRate(ev, args[0], true, false)
 }
 
 // === irate(node ValueTypeMatrix) Vector ===

@@ -474,7 +474,7 @@ func (t *Test) exec(tc testCommand) error {
 
 		err := cmd.compareResult(res.Value)
 		if err != nil {
-			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
+			return fmt.Errorf("error in %s %s@%d: %s", cmd, cmd.expr, durationMilliseconds(cmd.end.Sub(testStartTime)), err)
 		}
 
 	default:
