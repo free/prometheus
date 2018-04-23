@@ -469,22 +469,32 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) bool {
+
+	Inspect(s.Expr, func(node Node, path []Node) bool {
+		var nodeOffset time.Duration
 		switch n := node.(type) {
 		case *VectorSelector:
-			if maxOffset < LookbackDelta {
-				maxOffset = LookbackDelta
-			}
-			if n.Offset+LookbackDelta > maxOffset {
-				maxOffset = n.Offset + LookbackDelta
+			nodeOffset += LookbackDelta
+			if n.Offset > 0 {
+				nodeOffset += n.Offset
 			}
 		case *MatrixSelector:
-			if maxOffset < n.Range {
-				maxOffset = n.Range
+			nodeOffset += n.Range
+			if n.Offset > 0 {
+				nodeOffset += n.Offset
 			}
-			if n.Offset+n.Range > maxOffset {
-				maxOffset = n.Offset + n.Range
+			// Include an extra LookbackDelta iff this is the argument to an
+			// extended range function. Extended ranges include one extra
+			// point, this is how far back we need to look for it.
+			f, ok := getFunction(extractFuncFromPath(path))
+			if ok && f.ExtRange {
+				// Also mark the MatrixSelector object as extended range.
+				n.extRange = true
+				nodeOffset += LookbackDelta
 			}
+		}
+		if maxOffset < nodeOffset {
+			maxOffset = nodeOffset
 		}
 		return true
 	})
@@ -534,8 +544,15 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
 			}
+			// Populate the requested range, plus an extra LookbackDelta iff this
+			// is the argument to an extended range function. Extended ranges
+			// include one extra point, this is how far back we need to look for it.
+			delta := durationMilliseconds(n.Range)
+			if n.extRange {
+				delta = durationMilliseconds(n.Range + LookbackDelta)
+			}
 			for _, s := range n.series {
-				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
+				it := storage.NewBuffer(s.Iterator(), delta)
 				n.iterators = append(n.iterators, it)
 			}
 		}
@@ -868,14 +885,27 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		}
 
 		buf := it.Buffer()
+		appendedPointBeforeMint := false
 		for buf.Next() {
 			t, v := buf.At()
 			if value.IsStaleNaN(v) {
 				continue
 			}
-			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mint {
-				allPoints = append(allPoints, Point{T: t, V: v})
+			if !node.extRange {
+				// Values in the buffer are guaranteed to be smaller than maxt.
+				if t >= mint {
+					allPoints = append(allPoints, Point{T: t, V: v})
+				}
+			} else {
+				// This is the argument to an extended range function: if any point
+				// exists at or before range start, add it and then keep replacing
+				// it with later points while not yet (strictly) inside the range.
+				if t > mint || !appendedPointBeforeMint {
+					allPoints = append(allPoints, Point{T: t, V: v})
+					appendedPointBeforeMint = true
+				} else {
+					allPoints[len(allPoints)-1] = Point{T: t, V: v}
+				}
 			}
 		}
 		// The seeked sample might also be in the range.

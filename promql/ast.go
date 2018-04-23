@@ -135,6 +135,7 @@ type MatrixSelector struct {
 	// The series iterators are populated at query preparation time.
 	series    []storage.Series
 	iterators []*storage.BufferedSeriesIterator
+	extRange  bool
 }
 
 // NumberLiteral represents a number.
