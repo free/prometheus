@@ -607,23 +607,23 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 	var droppedAlertManagers []alertmanager
 
 	for _, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
+		lbls := make(labels.Labels, 0, len(tlset)+2+len(tg.Labels))
 
 		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+			lbls = append(lbls, &labels.Label{Name: string(ln), Value: string(lv)})
 		}
 		// Set configured scheme as the initial scheme label for overwrite.
-		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
-		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix)})
+		lbls = append(lbls, &labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
+		lbls = append(lbls, &labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix)})
 
 		// Combine target labels with target group labels.
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+				lbls = append(lbls, &labels.Label{Name: string(ln), Value: string(lv)})
 			}
 		}
 
-		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
+		lset := relabel.Process(lbls, cfg.RelabelConfigs...)
 		if lset == nil {
 			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
 			continue

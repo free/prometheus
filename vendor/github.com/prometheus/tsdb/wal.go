@@ -1136,8 +1136,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]RefSeries) error {
 		lset := make(labels.Labels, dec.uvarint())
 
 		for i := range lset {
-			lset[i].Name = dec.uvarintStr()
-			lset[i].Value = dec.uvarintStr()
+			lset[i] = &labels.Label{dec.uvarintStr(), dec.uvarintStr()}
 		}
 		sort.Sort(lset)
 

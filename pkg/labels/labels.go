@@ -40,7 +40,7 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []Label
+type Labels []*Label
 
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
@@ -148,8 +148,8 @@ func (ls Labels) Map() map[string]string {
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
-	for _, l := range ls {
-		set = append(set, l)
+	for i := range ls {
+		set = append(set, &ls[i])
 	}
 	sort.Sort(set)
 
@@ -172,7 +172,7 @@ func FromStrings(ss ...string) Labels {
 	}
 	var res Labels
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		res = append(res, &Label{Name: ss[i], Value: ss[i+1]})
 	}
 
 	sort.Sort(res)
@@ -203,7 +203,7 @@ func Compare(a, b Labels) int {
 type Builder struct {
 	base Labels
 	del  []string
-	add  []Label
+	add  []*Label
 }
 
 // NewBuilder returns a new LabelsBuilder
@@ -211,7 +211,7 @@ func NewBuilder(base Labels) *Builder {
 	return &Builder{
 		base: base,
 		del:  make([]string, 0, 5),
-		add:  make([]Label, 0, 5),
+		add:  make([]*Label, 0, 5),
 	}
 }
 
@@ -236,7 +236,7 @@ func (b *Builder) Set(n, v string) *Builder {
 			return b
 		}
 	}
-	b.add = append(b.add, Label{Name: n, Value: v})
+	b.add = append(b.add, &Label{Name: n, Value: v})
 
 	return b
 }

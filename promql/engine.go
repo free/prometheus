@@ -1527,7 +1527,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				for _, l := range metric {
 					for _, n := range grouping {
 						if l.Name == n {
-							m = append(m, labels.Label{Name: n, Value: l.Value})
+							m = append(m, l)
 							break
 						}
 					}

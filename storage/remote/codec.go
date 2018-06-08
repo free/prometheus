@@ -213,7 +213,7 @@ type concreteSeries struct {
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
-	return labels.New(c.labels...)
+	return c.labels
 }
 
 func (c *concreteSeries) Iterator() storage.SeriesIterator {
@@ -351,7 +351,7 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 	result := make(labels.Labels, 0, len(labelPairs))
 	for _, l := range labelPairs {
-		result = append(result, labels.Label{
+		result = append(result, &labels.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})

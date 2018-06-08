@@ -231,7 +231,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		annotations := make(labels.Labels, 0, len(r.annotations))
 		for _, a := range r.annotations {
-			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
+			annotations = append(annotations, &labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
 		h := smpl.Metric.Hash()

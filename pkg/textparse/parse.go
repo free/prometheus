@@ -195,7 +195,7 @@ func (p *Parser) Metric(l *labels.Labels) string {
 	// have to create references on it below.
 	s := string(p.series)
 
-	*l = append(*l, labels.Label{
+	*l = append(*l, &labels.Label{
 		Name:  labels.MetricName,
 		Value: s[:p.offsets[0]-p.start],
 	})
@@ -208,10 +208,10 @@ func (p *Parser) Metric(l *labels.Labels) string {
 
 		// Replacer causes allocations. Replace only when necessary.
 		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			*l = append(*l, labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
+			*l = append(*l, &labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
 			continue
 		}
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
+		*l = append(*l, &labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
 	// Sort labels. We can skip the first entry since the metric name is

@@ -283,10 +283,20 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	panic("storage.convertMatcher: invalid matcher type")
 }
 
-func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
-	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l))
+func toTSDBLabels(ls labels.Labels) tsdbLabels.Labels {
+	//	result := make(tsdbLabels.Labels, 0, len(ls))
+	//	for _, l := range ls {
+	//		result = append(result, &tsdbLabels.Label{l.Name, l.Value})
+	//	}
+	//	return result
+	return *(*tsdbLabels.Labels)(unsafe.Pointer(&ls))
 }
 
-func toLabels(l tsdbLabels.Labels) labels.Labels {
-	return *(*labels.Labels)(unsafe.Pointer(&l))
+func toLabels(ls tsdbLabels.Labels) labels.Labels {
+	//	result := make(labels.Labels, 0, len(ls))
+	//	for _, l := range ls {
+	//		result = append(result, &labels.Label{l.Name, l.Value})
+	//	}
+	//	return result
+	return *(*labels.Labels)(unsafe.Pointer(&ls))
 }

@@ -906,7 +906,7 @@ func (p *parser) metric() labels.Labels {
 		m = p.labelSet()
 	}
 	if name != "" {
-		m = append(m, labels.Label{Name: labels.MetricName, Value: name})
+		m = append(m, &labels.Label{Name: labels.MetricName, Value: name})
 		sort.Sort(m)
 	}
 	return m

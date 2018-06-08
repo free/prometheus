@@ -190,7 +190,7 @@ func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 	p.mtx.Lock()
 
 	for _, l := range lset {
-		p.addFor(id, l)
+		p.addFor(id, *l)
 	}
 	p.addFor(id, allPostingsKey)
 

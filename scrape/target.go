@@ -396,20 +396,18 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 	targets := make([]*Target, 0, len(tg.Targets))
 
 	for i, tlset := range tg.Targets {
-		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
+		lbls := make(labels.Labels, 0, len(tlset)+len(tg.Labels))
 
 		for ln, lv := range tlset {
-			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+			lbls = append(lbls, &labels.Label{Name: string(ln), Value: string(lv)})
 		}
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
-				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
+				lbls = append(lbls, &labels.Label{Name: string(ln), Value: string(lv)})
 			}
 		}
 
-		lset := labels.New(lbls...)
-
-		lbls, origLabels, err := populateLabels(lset, cfg)
+		lbls, origLabels, err := populateLabels(lbls, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
 		}

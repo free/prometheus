@@ -1169,7 +1169,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
-		labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
+		&labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
 	}
 
 	hash := lset.Hash()

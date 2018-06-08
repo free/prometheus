@@ -1057,7 +1057,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 			return errors.Wrap(err, "lookup label value")
 		}
 
-		*lbls = append(*lbls, labels.Label{Name: ln, Value: lv})
+		*lbls = append(*lbls, &labels.Label{Name: ln, Value: lv})
 	}
 
 	// Read the chunks meta data.

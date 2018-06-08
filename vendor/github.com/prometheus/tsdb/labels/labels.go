@@ -34,7 +34,7 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []Label
+type Labels []*Label
 
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
@@ -87,7 +87,7 @@ func (ls Labels) Equals(o Labels) bool {
 		return false
 	}
 	for i, l := range ls {
-		if o[i] != l {
+		if l.Name != o[i].Name || l.Value != o[i].Value {
 			return false
 		}
 	}
@@ -107,8 +107,8 @@ func (ls Labels) Map() map[string]string {
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
 	set := make(Labels, 0, len(ls))
-	for _, l := range ls {
-		set = append(set, l)
+	for i := range ls {
+		set = append(set, &ls[i])
 	}
 	sort.Sort(set)
 
@@ -131,7 +131,7 @@ func FromStrings(ss ...string) Labels {
 	}
 	var res Labels
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		res = append(res, &Label{Name: ss[i], Value: ss[i+1]})
 	}
 
 	sort.Sort(res)
@@ -189,7 +189,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 		labelChunks := strings.Split(s, ",")
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
-			m = append(m, Label{Name: split[0], Value: split[1]})
+			m = append(m, &Label{Name: split[0], Value: split[1]})
 		}
 		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
 		sort.Sort(m)
