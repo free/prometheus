@@ -603,7 +603,7 @@ type EvalNodeHelper struct {
 	// dropMetricName and label_*.
 	dmn map[uint64]labels.Labels
 	// signatureFunc.
-	sigf map[uint64]uint64
+	sigf map[*labels.Label]uint64
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[uint64]*metricWithBuckets
 	// label_replace.
@@ -633,17 +633,20 @@ func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 // signatureFunc is a cached version of signatureFunc.
 func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	if enh.sigf == nil {
-		enh.sigf = make(map[uint64]uint64, len(enh.out))
+		enh.sigf = make(map[*labels.Label]uint64, len(enh.out))
 	}
 	f := signatureFunc(on, names...)
 	return func(l labels.Labels) uint64 {
-		h := l.Hash()
-		ret, ok := enh.sigf[h]
+		var k *labels.Label
+		if len(l) > 0 {
+			k = &l[0]
+		}
+		ret, ok := enh.sigf[k]
 		if ok {
 			return ret
 		}
 		ret = f(l)
-		enh.sigf[h] = ret
+		enh.sigf[k] = ret
 		return ret
 	}
 }
