@@ -730,14 +730,17 @@ func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vecto
 		if !model.LabelNameRE.MatchString(dst) {
 			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+		enh.dmn = make(map[*labels.Label]labels.Labels, len(enh.out))
 	}
 
 	outSet := make(map[uint64]struct{}, len(vector))
 	for _, el := range vector {
-		h := el.Metric.Hash()
+		var k *labels.Label
+		if len(el.Metric) > 0 {
+			k = &el.Metric[0]
+		}
 		var outMetric labels.Labels
-		if l, ok := enh.dmn[h]; ok {
+		if l, ok := enh.dmn[k]; ok {
 			outMetric = l
 		} else {
 			srcVal := el.Metric.Get(src)
@@ -745,7 +748,7 @@ func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vecto
 			if indexes == nil {
 				// If there is no match, no replacement should take place.
 				outMetric = el.Metric
-				enh.dmn[h] = outMetric
+				enh.dmn[k] = outMetric
 			} else {
 				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
 
@@ -754,7 +757,7 @@ func funcLabelReplace(vals []Value, args Expressions, enh *EvalNodeHelper) Vecto
 					lb.Set(dst, string(res))
 				}
 				outMetric = lb.Labels()
-				enh.dmn[h] = outMetric
+				enh.dmn[k] = outMetric
 			}
 		}
 
@@ -792,7 +795,7 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	)
 
 	if enh.dmn == nil {
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+		enh.dmn = make(map[*labels.Label]labels.Labels, len(enh.out))
 	}
 
 	for i := 3; i < len(args); i++ {
@@ -810,9 +813,12 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	outSet := make(map[uint64]struct{}, len(vector))
 	srcVals := make([]string, len(srcLabels))
 	for _, el := range vector {
-		h := el.Metric.Hash()
+		var k *labels.Label
+		if len(el.Metric) > 0 {
+			k = &el.Metric[0]
+		}
 		var outMetric labels.Labels
-		if l, ok := enh.dmn[h]; ok {
+		if l, ok := enh.dmn[k]; ok {
 			outMetric = l
 		} else {
 
@@ -830,7 +836,7 @@ func funcLabelJoin(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 			}
 
 			outMetric = lb.Labels()
-			enh.dmn[h] = outMetric
+			enh.dmn[k] = outMetric
 		}
 		outHash := outMetric.Hash()
 

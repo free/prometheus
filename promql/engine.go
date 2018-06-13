@@ -601,7 +601,7 @@ type EvalNodeHelper struct {
 
 	// Caches.
 	// dropMetricName and label_*.
-	dmn map[uint64]labels.Labels
+	dmn map[*labels.Label]labels.Labels
 	// signatureFunc.
 	sigf map[*labels.Label]uint64
 	// funcHistogramQuantile.
@@ -618,15 +618,18 @@ type EvalNodeHelper struct {
 // dropMetricName is a cached version of dropMetricName.
 func (enh *EvalNodeHelper) dropMetricName(l labels.Labels) labels.Labels {
 	if enh.dmn == nil {
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+		enh.dmn = make(map[*labels.Label]labels.Labels, len(enh.out))
 	}
-	h := l.Hash()
-	ret, ok := enh.dmn[h]
+	var k *labels.Label
+	if len(l) > 0 {
+		k = &l[0]
+	}
+	ret, ok := enh.dmn[k]
 	if ok {
 		return ret
 	}
 	ret = dropMetricName(l)
-	enh.dmn[h] = ret
+	enh.dmn[k] = ret
 	return ret
 }
 
