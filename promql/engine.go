@@ -1253,7 +1253,7 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 }
 
 func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	l := labels.NewBuilder(lset).Del(names...).Labels()
+	l := labels.NewBuilder(lset).Del(names...).Del(labels.MetricName).Labels()
 	return l.Hash()
 }
 

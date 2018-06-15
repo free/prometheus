@@ -176,7 +176,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, labels.Labels{}, sequenceValue{value: f})
+			cmd.expectScalar(sequenceValue{value: f})
 			break
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
@@ -191,7 +191,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		if len(vals) > 1 {
 			return i, nil, raise(i, "expecting multiple values in instant evaluation not allowed")
 		}
-		cmd.expect(j, metric, vals...)
+		cmd.expect(j, &metric, vals...)
 	}
 	return i, cmd, nil
 }
@@ -337,14 +337,17 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
-	if len(m.L) == 0 {
-		ev.expected[0] = entry{pos: pos, vals: vals}
-		return
-	}
+func (ev *evalCmd) expect(pos int, m *labels.Labels, vals ...sequenceValue) {
 	h := m.Hash()
-	ev.metrics[h] = m
+	ev.metrics[h] = *m
 	ev.expected[h] = entry{pos: pos, vals: vals}
+}
+
+// expectScalar adds a new scalar value to the set of expected results for the
+// query.
+func (ev *evalCmd) expectScalar(val sequenceValue) {
+	ev.expected[0] = entry{pos: 0, vals: []sequenceValue{val}}
+	return
 }
 
 // compareResult compares the result value with the defined expectation.
@@ -439,16 +442,16 @@ func (t *Test) exec(tc testCommand) error {
 			if cmd.fail {
 				return nil
 			}
-			return fmt.Errorf("error evaluating query %q (line %d): %s", cmd.expr, cmd.line, res.Err)
+			return fmt.Errorf("%d: error evaluating query %q: %s", cmd.line, cmd.expr, res.Err)
 		}
 		defer q.Close()
 		if res.Err == nil && cmd.fail {
-			return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+			return fmt.Errorf("%d: expected error evaluating query %q but got none", cmd.line, cmd.expr)
 		}
 
 		err := cmd.compareResult(res.Value)
 		if err != nil {
-			return fmt.Errorf("error in %s %s: %s", cmd, cmd.expr, err)
+			return fmt.Errorf("%d: error in %s %s: %s", cmd.line, cmd, cmd.expr, err)
 		}
 
 		// Check query returns same result in range mode,
@@ -456,7 +459,7 @@ func (t *Test) exec(tc testCommand) error {
 		q, _ = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
 		rangeRes := q.Exec(t.context)
 		if rangeRes.Err != nil {
-			return fmt.Errorf("error evaluating query %q (line %d) in range mode: %s", cmd.expr, cmd.line, rangeRes.Err)
+			return fmt.Errorf("%d: error evaluating query %q in range mode: %s", cmd.line, cmd.expr, rangeRes.Err)
 		}
 		defer q.Close()
 		if cmd.ordered {
@@ -479,7 +482,7 @@ func (t *Test) exec(tc testCommand) error {
 			err = cmd.compareResult(vec)
 		}
 		if err != nil {
-			return fmt.Errorf("error in %s %s (line %d) rande mode: %s", cmd, cmd.expr, cmd.line, err)
+			return fmt.Errorf("%d: error in %s %s rande mode: %s", cmd.line, cmd, cmd.expr, err)
 		}
 
 	default:
