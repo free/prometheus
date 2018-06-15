@@ -1204,6 +1204,21 @@ var functions = map[string]*Function{
 	},
 }
 
+func init() {
+	// REPLACE_RATE_FUNCS replaces the default rate extrapolation functions
+	// with xrate functions. This allows for a drop-in replacement and Grafana
+	// auto-completion, Prometheus tooling, Thanos, etc. should still work as expected.
+	if os.Getenv("REPLACE_RATE_FUNCS") == "1" {
+		functions["delta"] = functions["xdelta"]
+		functions["increase"] = functions["xincrease"]
+		functions["rate"] = functions["xrate"]
+		delete(functions, "xdelta")
+		delete(functions, "xincrease")
+		delete(functions, "xrate")
+		fmt.Println("Successfully replaced rate & friends with xrate & friends (and removed xrate & friends function keys).")
+	}
+}
+
 // getFunction returns a predefined Function object for the given name.
 func getFunction(name string) (*Function, bool) {
 	function, ok := functions[name]
