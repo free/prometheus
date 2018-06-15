@@ -343,7 +343,10 @@ load 10s
 		if res.Err != nil {
 			t.Fatalf("unexpected error running query: %q", res.Err)
 		}
-		if !reflect.DeepEqual(res.Value, c.Result) {
+		if reflect.TypeOf(res.Value) != reflect.TypeOf(c.Result) {
+			t.Fatalf("unexpected result type for query %q: got %q wanted %q", c.Query, reflect.TypeOf(res.Value), reflect.TypeOf(c.Result))
+		}
+		if res.Value.String() != c.Result.String() {
 			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
 		}
 	}

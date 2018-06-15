@@ -1466,7 +1466,7 @@ var testStatement = []struct {
 			    summary     = "Global request rate low",
 			    description = "The global request rate is low"
 			  }
-			  
+
 			foo = bar{label1="value1"}
 
 			ALERT BazAlert IF foo > 10
@@ -1495,7 +1495,6 @@ var testStatement = []struct {
 						},
 					},
 				},
-				Labels: nil,
 			},
 			&AlertStmt{
 				Name: "GlobalRequestRateLow",
@@ -1582,7 +1581,7 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{1},
 				},
-				Labels: labels.Labels{},
+				Labels: labels.New(),
 				Annotations: labels.FromStrings(
 					"summary", "Global request rate low",
 					"description", "The global request rate is low",
@@ -1610,17 +1609,15 @@ var testStatement = []struct {
 		input: "foo = time()",
 		expected: Statements{
 			&RecordStmt{
-				Name:   "foo",
-				Expr:   &Call{Func: mustGetFunction("time")},
-				Labels: nil,
+				Name: "foo",
+				Expr: &Call{Func: mustGetFunction("time")},
 			}},
 	}, {
 		input: "foo = 1",
 		expected: Statements{
 			&RecordStmt{
-				Name:   "foo",
-				Expr:   &NumberLiteral{1},
-				Labels: nil,
+				Name: "foo",
+				Expr: &NumberLiteral{1},
 			}},
 	}, {
 		input: "foo = bar[5m]",

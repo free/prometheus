@@ -18,7 +18,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -799,7 +798,7 @@ func (p *parser) call(name string) *Call {
 //		'{' [ <labelname> '=' <match_string>, ... ] '}'
 //
 func (p *parser) labelSet() labels.Labels {
-	set := []labels.Label{}
+	var set []labels.Label
 	for _, lm := range p.labelMatchers(itemEQL) {
 		set = append(set, labels.Label{Name: lm.Name, Value: lm.Value})
 	}
@@ -906,8 +905,7 @@ func (p *parser) metric() labels.Labels {
 		m = p.labelSet()
 	}
 	if name != "" {
-		m = append(m, labels.Label{Name: labels.MetricName, Value: name})
-		sort.Sort(m)
+		m = labels.NewBuilder(m).Set(labels.MetricName, name).Labels()
 	}
 	return m
 }

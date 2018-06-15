@@ -1253,28 +1253,14 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 }
 
 func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(lset))
-
-Outer:
-	for _, l := range lset {
-		for _, n := range names {
-			if n == l.Name {
-				continue Outer
-			}
-		}
-		if l.Name == labels.MetricName {
-			continue
-		}
-		cm = append(cm, l)
-	}
-
-	return cm.Hash()
+	l := labels.NewBuilder(lset).Del(names...).Labels()
+	return l.Hash()
 }
 
 func hashForLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make(labels.Labels, 0, len(names))
+	cm := make([]labels.Label, 0, len(names))
 
-	for _, l := range lset {
+	for _, l := range lset.L {
 		for _, n := range names {
 			if l.Name == n {
 				cm = append(cm, l)
@@ -1282,7 +1268,8 @@ func hashForLabels(lset labels.Labels, names ...string) uint64 {
 			}
 		}
 	}
-	return cm.Hash()
+	l := labels.New(cm...)
+	return l.Hash()
 }
 
 // signatureFunc returns a function that calculates the signature for a metric
@@ -1322,7 +1309,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	if matching.Card == CardOneToOne {
 		if matching.On {
 		Outer:
-			for _, l := range lhs {
+			for _, l := range lhs.L {
 				for _, n := range matching.MatchingLabels {
 					if l.Name == n {
 						continue Outer
@@ -1445,17 +1432,17 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 
 // intersection returns the metric of common label/value pairs of two input metrics.
 func intersection(ls1, ls2 labels.Labels) labels.Labels {
-	res := make(labels.Labels, 0, 5)
+	res := make([]labels.Label, 0, 5)
 
-	for _, l1 := range ls1 {
-		for _, l2 := range ls2 {
+	for _, l1 := range ls1.L {
+		for _, l2 := range ls2.L {
 			if l1.Name == l2.Name && l1.Value == l2.Value {
 				res = append(res, l1)
 				continue
 			}
 		}
 	}
-	return res
+	return labels.New(res...)
 }
 
 type groupedAggregation struct {
@@ -1523,16 +1510,16 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			if without {
 				m = metric
 			} else {
-				m = make(labels.Labels, 0, len(grouping))
-				for _, l := range metric {
+				ls := make([]labels.Label, 0, len(grouping))
+				for _, l := range metric.L {
 					for _, n := range grouping {
 						if l.Name == n {
-							m = append(m, labels.Label{Name: n, Value: l.Value})
+							ls = append(ls, labels.Label{Name: n, Value: l.Value})
 							break
 						}
 					}
 				}
-				sort.Sort(m)
+				m = labels.New(ls...)
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:           m,
