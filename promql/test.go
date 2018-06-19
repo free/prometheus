@@ -191,7 +191,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		if len(vals) > 1 {
 			return i, nil, raise(i, "expecting multiple values in instant evaluation not allowed")
 		}
-		cmd.expect(j, &metric, vals...)
+		cmd.expect(j, metric, vals...)
 	}
 	return i, cmd, nil
 }
@@ -337,9 +337,9 @@ func (ev *evalCmd) String() string {
 
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
-func (ev *evalCmd) expect(pos int, m *labels.Labels, vals ...sequenceValue) {
+func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
 	h := m.Hash()
-	ev.metrics[h] = *m
+	ev.metrics[h] = m
 	ev.expected[h] = entry{pos: pos, vals: vals}
 }
 
@@ -375,10 +375,6 @@ func (ev *evalCmd) compareResult(result Value) error {
 		}
 		for fp, expVals := range ev.expected {
 			if !seen[fp] {
-				fmt.Println("vector result", len(val), ev.expr)
-				for _, ss := range val {
-					fmt.Println("    ", ss.Metric, ss.Point)
-				}
 				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
 			}
 		}

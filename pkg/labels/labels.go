@@ -55,7 +55,7 @@ type labels struct {
 
 var (
 	labelsPointer *labels
-	zeroLabels    = New()
+	LabelsZero    = New()
 )
 
 const (
@@ -139,7 +139,7 @@ func New(ls ...Label) Labels {
 
 func (ls *Labels) labels() *labels {
 	if ls.s == "" {
-		ls.s = zeroLabels.s
+		ls.s = LabelsZero.s
 	}
 	return (*labels)(unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&ls.s)).Data))
 }
@@ -160,7 +160,7 @@ func (ls Labels) Hash() uint64 {
 
 func (ls Labels) HashForLabels(names ...string) uint64 {
 	buf := make([]byte, 0, 1024)
-	buf = append(buf, '}')
+	buf = append(buf, '{')
 	for i := 0; i < ls.Len(); i++ {
 		name := ls.LabelName(i)
 		for _, n := range names {
@@ -180,10 +180,13 @@ func (ls Labels) HashForLabels(names ...string) uint64 {
 
 func (ls Labels) HashWithoutLabels(names ...string) uint64 {
 	buf := make([]byte, 0, 1024)
-	buf = append(buf, '}')
+	buf = append(buf, '{')
 Outer:
 	for i := 0; i < ls.Len(); i++ {
 		name := ls.LabelName(i)
+		if name == MetricName {
+			continue
+		}
 		for _, n := range names {
 			if name == n {
 				continue Outer
