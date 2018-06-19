@@ -1416,8 +1416,9 @@ func intersection(ls1, ls2 labels.Labels) labels.Labels {
 	res := make([]labels.Label, 0, 5)
 
 	for i := 0; i < ls1.Len(); i++ {
+		l1 := ls1.Label(i)
 		for j := 0; j < ls2.Len(); j++ {
-			if ls1.Label(i) == ls2.Label(j) {
+			if l1 == ls2.Label(j) {
 				res = append(res, labels.Label{ls1.LabelName(i), ls1.LabelValue(i)})
 				continue
 			}
@@ -1463,22 +1464,19 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 	}
 
 	for _, s := range vec {
-		lb := labels.NewBuilder(s.Metric)
+		metric := s.Metric
 
-		if without {
-			lb.Del(grouping...)
-			lb.Del(labels.MetricName)
-		}
 		if op == itemCountValues {
+			lb := labels.NewBuilder(metric)
 			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
+			metric = lb.Labels()
 		}
 
 		var (
 			groupingKey uint64
-			metric      = lb.Labels()
 		)
 		if without {
-			groupingKey = metric.Hash()
+			groupingKey = metric.HashWithoutLabels(grouping...)
 		} else {
 			groupingKey = metric.HashForLabels(grouping...)
 		}
@@ -1489,13 +1487,17 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			var m labels.Labels
 
 			if without {
-				m = metric
+				lb := labels.NewBuilder(metric)
+				lb.Del(grouping...)
+				lb.Del(labels.MetricName)
+				m = lb.Labels()
 			} else {
 				ls := make([]labels.Label, 0, len(grouping))
 				for i := 0; i < metric.Len(); i++ {
+					name := metric.LabelName(i)
 					for _, n := range grouping {
-						if metric.LabelName(i) == n {
-							ls = append(ls, labels.Label{Name: n, Value: metric.LabelValue(i)})
+						if name == n {
+							ls = append(ls, labels.Label{metric.LabelName(i), metric.LabelValue(i)})
 							break
 						}
 					}
