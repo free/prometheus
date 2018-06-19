@@ -1701,7 +1701,7 @@ var testSeries = []struct {
 }{
 	{
 		input:          `{} 1 2 3`,
-		expectedMetric: labels.Labels{},
+		expectedMetric: labels.New(),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `{a="b"} -1 2 3`,

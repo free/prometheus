@@ -158,6 +158,47 @@ func (ls Labels) Hash() uint64 {
 	return l.hash
 }
 
+func (ls Labels) HashForLabels(names ...string) uint64 {
+	buf := make([]byte, 0, 1024)
+	buf = append(buf, '}')
+	for i := 0; i < ls.Len(); i++ {
+		name := ls.LabelName(i)
+		for _, n := range names {
+			if name == n {
+				buf = append(buf, ls.Label(i)...)
+				buf = append(buf, ',')
+				continue
+			}
+		}
+	}
+	if len(buf) > 1 {
+		buf = buf[:len(buf)-1]
+	}
+	buf = append(buf, '}')
+	return xxhash.Sum64(buf)
+}
+
+func (ls Labels) HashWithoutLabels(names ...string) uint64 {
+	buf := make([]byte, 0, 1024)
+	buf = append(buf, '}')
+Outer:
+	for i := 0; i < ls.Len(); i++ {
+		name := ls.LabelName(i)
+		for _, n := range names {
+			if name == n {
+				continue Outer
+			}
+		}
+		buf = append(buf, ls.Label(i)...)
+		buf = append(buf, ',')
+	}
+	if len(buf) > 1 {
+		buf = buf[:len(buf)-1]
+	}
+	buf = append(buf, '}')
+	return xxhash.Sum64(buf)
+}
+
 func (ls Labels) isPrint() bool {
 	return ls.labels().isPrint
 }

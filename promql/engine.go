@@ -1252,26 +1252,6 @@ func (ev *evaluator) VectorBinop(op ItemType, lhs, rhs Vector, matching *VectorM
 	return enh.out
 }
 
-func hashWithoutLabels(lset labels.Labels, names ...string) uint64 {
-	l := labels.NewBuilder(lset).Del(names...).Del(labels.MetricName).Labels()
-	return l.Hash()
-}
-
-func hashForLabels(lset labels.Labels, names ...string) uint64 {
-	cm := make([]labels.Label, 0, len(names))
-
-	for _, l := range lset.L {
-		for _, n := range names {
-			if l.Name == n {
-				cm = append(cm, l)
-				break
-			}
-		}
-	}
-	l := labels.New(cm...)
-	return l.Hash()
-}
-
 // signatureFunc returns a function that calculates the signature for a metric
 // ignoring the provided labels. If on, then the given labels are only used instead.
 func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
@@ -1279,9 +1259,9 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	// of labels by names to speed up the operations below.
 	// Alternatively, inline the hashing and don't build new label sets.
 	if on {
-		return func(lset labels.Labels) uint64 { return hashForLabels(lset, names...) }
+		return func(lset labels.Labels) uint64 { return lset.HashForLabels(names...) }
 	}
-	return func(lset labels.Labels) uint64 { return hashWithoutLabels(lset, names...) }
+	return func(lset labels.Labels) uint64 { return lset.HashWithoutLabels(names...) }
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
@@ -1309,13 +1289,14 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	if matching.Card == CardOneToOne {
 		if matching.On {
 		Outer:
-			for _, l := range lhs.L {
+			for i := 0; i < lhs.Len(); i++ {
+				name := lhs.LabelName(i)
 				for _, n := range matching.MatchingLabels {
-					if l.Name == n {
+					if name == n {
 						continue Outer
 					}
 				}
-				lb.Del(l.Name)
+				lb.Del(name)
 			}
 		} else {
 			lb.Del(matching.MatchingLabels...)
@@ -1434,10 +1415,10 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 func intersection(ls1, ls2 labels.Labels) labels.Labels {
 	res := make([]labels.Label, 0, 5)
 
-	for _, l1 := range ls1.L {
-		for _, l2 := range ls2.L {
-			if l1.Name == l2.Name && l1.Value == l2.Value {
-				res = append(res, l1)
+	for i := 0; i < ls1.Len(); i++ {
+		for j := 0; j < ls2.Len(); j++ {
+			if ls1.Label(i) == ls2.Label(j) {
+				res = append(res, labels.Label{ls1.LabelName(i), ls1.LabelValue(i)})
 				continue
 			}
 		}
@@ -1499,7 +1480,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 		if without {
 			groupingKey = metric.Hash()
 		} else {
-			groupingKey = hashForLabels(metric, grouping...)
+			groupingKey = metric.HashForLabels(grouping...)
 		}
 
 		group, ok := result[groupingKey]
@@ -1511,10 +1492,10 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				m = metric
 			} else {
 				ls := make([]labels.Label, 0, len(grouping))
-				for _, l := range metric.L {
+				for i := 0; i < metric.Len(); i++ {
 					for _, n := range grouping {
-						if l.Name == n {
-							ls = append(ls, labels.Label{Name: n, Value: l.Value})
+						if metric.LabelName(i) == n {
+							ls = append(ls, labels.Label{Name: n, Value: metric.LabelValue(i)})
 							break
 						}
 					}

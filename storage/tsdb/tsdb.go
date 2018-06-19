@@ -284,11 +284,18 @@ func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 }
 
 func toTSDBLabels(l labels.Labels) tsdbLabels.Labels {
-	return *(*tsdbLabels.Labels)(unsafe.Pointer(&l.L))
+	var set tsdbLabels.Labels
+	if l.Len() > 0 {
+		set = make(tsdbLabels.Labels, l.Len())
+		for i := 0; i < l.Len(); i++ {
+			set[i] = tsdbLabels.Label{l.LabelName(i), l.LabelValue(i)}
+		}
+	}
+	return set
 }
 
 type labelz []labels.Label
 
 func toLabels(l tsdbLabels.Labels) labels.Labels {
-	return labels.Labels{L: *(*labelz)(unsafe.Pointer(&l))}
+	return labels.New(*(*labelz)(unsafe.Pointer(&l))...)
 }
