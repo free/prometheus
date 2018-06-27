@@ -823,6 +823,10 @@ func (ev *evaluator) eval(expr Expr) Value {
 		mat := make(Matrix, 0, len(sel.series)) // Output matrix.
 		offset := durationMilliseconds(sel.Offset)
 		selRange := durationMilliseconds(sel.Range)
+		stepRange := selRange
+		if stepRange > ev.interval {
+			stepRange = ev.interval
+		}
 		// Reuse objects across steps to save memory allocations.
 		points := getPointSlice(16)
 		inMatrix := make(Matrix, 1)
@@ -831,7 +835,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
 		for i, s := range sel.series {
-			it.Reset(s.Iterator())
+			it.Reset(s.Iterator(), selRange)
 			ss := Series{
 				// For all range vector functions, the only change to the
 				// output labels is dropping the metric name so just do
@@ -853,7 +857,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				maxt := ts - offset
 				mint := maxt - selRange
 				// Evaluate the matrix selector for this series for this step.
-				points = ev.matrixIterSlice(it, mint, maxt, points[:0])
+				points = ev.matrixIterSlice(it, mint, maxt, points)
 				if len(points) == 0 {
 					continue
 				}
@@ -865,6 +869,8 @@ func (ev *evaluator) eval(expr Expr) Value {
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
 				}
+				// Only buffer stepRange milliseconds from the second step on.
+				it.SetDelta(stepRange)
 			}
 			if len(ss.Points) > 0 {
 				mat = append(mat, ss)
@@ -935,7 +941,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 		mat := make(Matrix, 0, len(e.series))
 		it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 		for i, s := range e.series {
-			it.Reset(s.Iterator())
+			it.Reset(s.Iterator(), durationMilliseconds(LookbackDelta))
 			ss := Series{
 				Metric: e.series[i].Labels(),
 				Points: getPointSlice(numSteps),
@@ -972,7 +978,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 
 	it := storage.NewBuffer(durationMilliseconds(LookbackDelta))
 	for i, s := range node.series {
-		it.Reset(s.Iterator())
+		it.Reset(s.Iterator(), durationMilliseconds(LookbackDelta))
 
 		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
@@ -1043,7 +1049,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		it.Reset(s.Iterator())
+		it.Reset(s.Iterator(), durationMilliseconds(node.Range))
 		ss := Series{
 			Metric: node.series[i].Labels(),
 		}
@@ -1064,6 +1070,23 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
+	}
+
+	if maxt-mint > ev.interval && len(out) > 0 && out[len(out)-1].T >= mint {
+		// There is an overlap between previous and current ranges, copy common
+		// points. In most such cases:
+		//   (a) the overlap is significantly larger than the eval step; and/or
+		//   (b) the number of samples is relatively small.
+		// so a linear start from the beginning will be as fast as a binary search.
+		var drop int
+		for drop = 0; out[drop].T < mint; drop++ {
+		}
+		copy(out, out[drop:])
+		out = out[:len(out)-drop]
+		// Only append samples after the last one we have.
+		mint = out[len(out)-1].T + 1
+	} else {
+		out = out[:0]
 	}
 
 	buf := it.Buffer()
