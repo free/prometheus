@@ -1101,9 +1101,10 @@ type memSeries struct {
 	chunkRange   int64
 	firstChunkID int
 
-	nextAt    int64 // timestamp at which to cut the next chunk.
-	lastValue float64
-	sampleBuf [4]sample
+	nextAt       int64 // timestamp at which to cut the next chunk.
+	lastValue    float64
+	sampleBuf    [128]sample
+	sampleBufIdx int
 
 	app chunkenc.Appender // Current appender for the chunk.
 }
@@ -1234,10 +1235,8 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 
 	s.lastValue = v
 
-	s.sampleBuf[0] = s.sampleBuf[1]
-	s.sampleBuf[1] = s.sampleBuf[2]
-	s.sampleBuf[2] = s.sampleBuf[3]
-	s.sampleBuf[3] = sample{t: t, v: v}
+	s.sampleBuf[s.sampleBufIdx] = sample{t: t, v: v}
+	s.sampleBufIdx = (s.sampleBufIdx + 1) % len(s.sampleBuf)
 
 	return true, chunkCreated
 }
@@ -1272,6 +1271,7 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 		i:        -1,
 		total:    c.chunk.NumSamples(),
 		buf:      s.sampleBuf,
+		idx:      s.sampleBufIdx,
 	}
 	return it
 }
@@ -1293,7 +1293,8 @@ type memSafeIterator struct {
 
 	i     int
 	total int
-	buf   [4]sample
+	buf   [128]sample
+	idx   int
 }
 
 func (it *memSafeIterator) Next() bool {
@@ -1301,17 +1302,17 @@ func (it *memSafeIterator) Next() bool {
 		return false
 	}
 	it.i++
-	if it.total-it.i > 4 {
+	if it.total-it.i > len(it.buf) {
 		return it.Iterator.Next()
 	}
 	return true
 }
 
 func (it *memSafeIterator) At() (int64, float64) {
-	if it.total-it.i > 4 {
+	if it.total-it.i > len(it.buf) {
 		return it.Iterator.At()
 	}
-	s := it.buf[4-(it.total-it.i)]
+	s := it.buf[(len(it.buf)+it.idx-(it.total-it.i))%len(it.buf)]
 	return s.t, s.v
 }
 
