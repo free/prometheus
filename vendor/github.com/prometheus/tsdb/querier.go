@@ -498,9 +498,15 @@ func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
 func (s *baseChunkSeries) Err() error { return s.err }
 
 func (s *baseChunkSeries) Next() bool {
+	lsetLen := len(s.lset)
+	chksLen := len(s.chks)
+	if lsetLen == 0 {
+		lsetLen = 6
+		chksLen = 2
+	}
 	var (
-		lset     labels.Labels
-		chkMetas []chunks.Meta
+		lset     = make(labels.Labels, lsetLen)
+		chkMetas = make([]chunks.Meta, chksLen)
 		err      error
 	)
 
