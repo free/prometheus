@@ -16,6 +16,7 @@ package promql
 import (
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -33,6 +34,7 @@ type Function struct {
 	ArgTypes   []ValueType
 	Variadic   int
 	ReturnType ValueType
+	ExtRange   bool
 
 	// vals is a list of the evaluated arguments for the function call.
 	//    For range vectors it will be a Matrix with one series, instant vectors a
@@ -138,6 +140,71 @@ func extrapolatedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCou
 	return enh.out
 }
 
+func extendedRate(vals []Value, args Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
+	ms := args[0].(*MatrixSelector)
+	matrix := vals[0].(Matrix)
+
+	var (
+		rangeStart = enh.ts - durationMilliseconds(ms.Range+ms.Offset)
+		rangeEnd   = enh.ts - durationMilliseconds(ms.Offset)
+	)
+
+	for _, samples := range matrix {
+		points := samples.Points
+		if len(points) < 2 {
+			continue
+		}
+		sampledRange := float64(points[len(points)-1].T - points[0].T)
+		averageInterval := sampledRange / float64(len(points)-1)
+
+		firstPoint := 0
+		// If the point before the range is too far from rangeStart, drop it.
+		if float64(rangeStart-points[0].T) > averageInterval {
+			if len(points) < 3 {
+				continue
+			}
+			firstPoint = 1
+			sampledRange = float64(points[len(points)-1].T - points[1].T)
+			averageInterval = sampledRange / float64(len(points)-2)
+		}
+
+		var (
+			counterCorrection float64
+			lastValue         float64
+		)
+		if isCounter {
+			for i := firstPoint; i < len(points); i++ {
+				sample := points[i]
+				if sample.V < lastValue {
+					counterCorrection += lastValue
+				}
+				lastValue = sample.V
+			}
+		}
+		resultValue := points[len(points)-1].V - points[firstPoint].V + counterCorrection
+
+		// Duration between last sample and boundary of range.
+		durationToEnd := float64(rangeEnd - points[len(points)-1].T)
+
+		// If the points cover the whole range (i.e. they start just before the
+		// range start and end just before the range end) adjust the value from
+		// the sampled range to the requested range.
+		if points[firstPoint].T <= rangeStart && durationToEnd < averageInterval {
+			adjustToRange := float64(durationMilliseconds(ms.Range))
+			resultValue = resultValue * (adjustToRange / sampledRange)
+		}
+
+		if isRate {
+			resultValue = resultValue / ms.Range.Seconds()
+		}
+
+		enh.out = append(enh.out, Sample{
+			Point: Point{V: resultValue},
+		})
+	}
+	return enh.out
+}
+
 // === delta(Matrix ValueTypeMatrix) Vector ===
 func funcDelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, false, false)
@@ -151,6 +218,21 @@ func funcRate(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 // === increase(node ValueTypeMatrix) Vector ===
 func funcIncrease(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, true, false)
+}
+
+// === xdelta(Matrix ValueTypeMatrix) Vector ===
+func funcXdelta(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, false, false)
+}
+
+// === xrate(node ValueTypeMatrix) Vector ===
+func funcXrate(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, true, true)
+}
+
+// === xincrease(node ValueTypeMatrix) Vector ===
+func funcXincrease(vals []Value, args Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, true, false)
 }
 
 // === irate(node ValueTypeMatrix) Vector ===
@@ -1195,6 +1277,27 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 		Call:       funcVector,
 	},
+	"xdelta": {
+		Name:       "xdelta",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXdelta,
+		ExtRange:   true,
+	},
+	"xincrease": {
+		Name:       "xincrease",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXincrease,
+		ExtRange:   true,
+	},
+	"xrate": {
+		Name:       "xrate",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+		Call:       funcXrate,
+		ExtRange:   true,
+	},
 	"year": {
 		Name:       "year",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -1202,6 +1305,24 @@ var functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 		Call:       funcYear,
 	},
+}
+
+func init() {
+	// REPLACE_RATE_FUNCS replaces the default rate extrapolation functions
+	// with xrate functions. This allows for a drop-in replacement and Grafana
+	// auto-completion, Prometheus tooling, Thanos, etc. should still work as expected.
+	if os.Getenv("REPLACE_RATE_FUNCS") == "1" {
+		functions["delta"] = functions["xdelta"]
+		functions["increase"] = functions["xincrease"]
+		functions["rate"] = functions["xrate"]
+		functions["delta"].Name = "delta"
+		functions["increase"].Name = "increase"
+		functions["rate"].Name = "rate"
+		delete(functions, "xdelta")
+		delete(functions, "xincrease")
+		delete(functions, "xrate")
+		fmt.Println("Successfully replaced rate & friends with xrate & friends (and removed xrate & friends function keys).")
+	}
 }
 
 // getFunction returns a predefined Function object for the given name.
