@@ -866,6 +866,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				mat = append(mat, ss)
 			}
 		}
+		it.Close()
 		putPointSlice(points)
 		return mat
 
@@ -952,6 +953,7 @@ func (ev *evaluator) eval(expr Expr) Value {
 				mat = append(mat, ss)
 			}
 		}
+		it.Close()
 		return mat
 
 	case *MatrixSelector:
@@ -987,6 +989,7 @@ func (ev *evaluator) vectorSelector(node *VectorSelector, ts int64) Vector {
 		}
 
 	}
+	it.Close()
 	return vec
 }
 
@@ -1062,6 +1065,7 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 			matrix = append(matrix, ss)
 		}
 	}
+	it.Close()
 	return matrix
 }
 

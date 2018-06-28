@@ -475,6 +475,12 @@ func (c *mergeIterator) Err() error {
 	return nil
 }
 
+func (c *mergeIterator) Close() {
+	for _, iter := range c.iterators {
+		iter.Close()
+	}
+}
+
 type seriesIteratorHeap []SeriesIterator
 
 func (h seriesIteratorHeap) Len() int      { return len(h) }

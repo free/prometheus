@@ -265,6 +265,9 @@ func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
 
+// Close implements storage.SeriesIterator.
+func (c *concreteSeriesIterator) Close() {}
+
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
 func validateLabelsAndMetricName(ls labels.Labels) error {
 	for _, l := range ls {
