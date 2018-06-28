@@ -82,6 +82,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 		steps int
 	}
 	cases := []benchCase{
+		// Plain retrieval.
+		{
+			expr: "a_X",
+		},
 		// Simple rate.
 		{
 			expr: "rate(a_X[1m])",
@@ -130,6 +134,25 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
+		{
+			expr: "max_over_time(a_X[10s])",
+		},
+		// Simple aggregations.
+		{
+			expr: "sum(a_X)",
+		},
+		{
+			expr: "sum without (l)(h_X)",
+		},
+		{
+			expr: "sum without (le)(h_X)",
+		},
+		{
+			expr: "sum by (l)(h_X)",
+		},
+		{
+			expr: "sum by (le)(h_X)",
 		},
 		// Combinations.
 		{
