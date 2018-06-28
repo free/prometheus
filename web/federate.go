@@ -90,7 +90,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		// TODO(fabxc): allow fast path for most recent sample either
 		// in the storage itself or caching layer in Prometheus.
-		it.Reset(s.Iterator(), int64(promql.LookbackDelta/1e6))
+		it.Reset(s.Iterator())
 
 		var t int64
 		var v float64
