@@ -1270,8 +1270,7 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 		Iterator: c.chunk.Iterator(),
 		i:        -1,
 		total:    c.chunk.NumSamples(),
-		buf:      s.sampleBuf,
-		idx:      s.sampleBufIdx,
+		buf:      getSampleSliceCopy(s.sampleBuf[:], s.sampleBufIdx),
 	}
 	return it
 }
@@ -1293,8 +1292,7 @@ type memSafeIterator struct {
 
 	i     int
 	total int
-	buf   [128]sample
-	idx   int
+	buf   []sample
 }
 
 func (it *memSafeIterator) Next() bool {
@@ -1309,11 +1307,37 @@ func (it *memSafeIterator) Next() bool {
 }
 
 func (it *memSafeIterator) At() (int64, float64) {
-	if it.total-it.i > len(it.buf) {
+	i := it.total - it.i
+	if i > len(it.buf) {
 		return it.Iterator.At()
 	}
-	s := it.buf[(len(it.buf)+it.idx-(it.total-it.i))%len(it.buf)]
+	s := &it.buf[len(it.buf)-i]
 	return s.t, s.v
+}
+
+func (it *memSafeIterator) Close() {
+	if it.buf != nil {
+		putSampleSlice(it.buf)
+		it.buf = nil
+	}
+}
+
+var samplePool = sync.Pool{}
+
+func getSampleSliceCopy(orig []sample, idx int) []sample {
+	var s []sample
+	p := samplePool.Get()
+	if p != nil {
+		s = p.([]sample)
+	} else {
+		s = make([]sample, 0, len(orig))
+	}
+	s = append(s, orig[idx:]...)
+	return append(s, orig[:idx]...)
+}
+
+func putSampleSlice(p []sample) {
+	samplePool.Put(p[:0])
 }
 
 type stringset map[string]struct{}

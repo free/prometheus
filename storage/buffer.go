@@ -49,6 +49,9 @@ func NewBufferIterator(it SeriesIterator, delta int64) *BufferedSeriesIterator {
 // Reset re-uses the buffer with a new iterator, resetting the buffered time
 // delta to its original value.
 func (b *BufferedSeriesIterator) Reset(it SeriesIterator) {
+	if b.it != nil {
+		b.it.Close()
+	}
 	b.it = it
 	b.lastTime = math.MinInt64
 	b.ok = true
@@ -133,6 +136,10 @@ func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
 }
 
+func (b *BufferedSeriesIterator) Close() {
+	b.it.Close()
+}
+
 type sample struct {
 	t int64
 	v float64
@@ -190,6 +197,8 @@ func (it *sampleRingIterator) Err() error {
 func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
+
+func (it *sampleRingIterator) Close() {}
 
 func (r *sampleRing) at(i int) (int64, float64) {
 	j := (r.f + i) % len(r.buf)

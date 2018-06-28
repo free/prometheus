@@ -683,6 +683,8 @@ type SeriesIterator interface {
 	Next() bool
 	// Err returns the current error.
 	Err() error
+	// Close releases any resources held by the iterator.
+	Close()
 }
 
 // chainedSeries implements a series for a list of time-sorted series.
@@ -722,6 +724,7 @@ func (it *chainedSeriesIterator) Seek(t int64) bool {
 	for i, s := range it.series[it.i:] {
 		cur := s.Iterator()
 		if !cur.Seek(t) {
+			cur.Close()
 			continue
 		}
 		it.cur = cur
@@ -736,16 +739,23 @@ func (it *chainedSeriesIterator) Next() bool {
 		return true
 	}
 	if err := it.cur.Err(); err != nil {
+		it.cur.Close()
 		return false
 	}
 	if it.i == len(it.series)-1 {
+		it.cur.Close()
 		return false
 	}
 
 	it.i++
+	it.cur.Close()
 	it.cur = it.series[it.i].Iterator()
 
-	return it.Next()
+	if !it.Next() {
+		it.cur.Close()
+		return false
+	}
+	return true
 }
 
 func (it *chainedSeriesIterator) At() (t int64, v float64) {
@@ -754,6 +764,10 @@ func (it *chainedSeriesIterator) At() (t int64, v float64) {
 
 func (it *chainedSeriesIterator) Err() error {
 	return it.cur.Err()
+}
+
+func (it *chainedSeriesIterator) Close() {
+	it.cur.Close()
 }
 
 // chunkSeriesIterator implements a series iterator on top
@@ -803,6 +817,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 		}
 	}
 
+	it.cur.Close()
 	it.cur = it.chunks[it.i].Chunk.Iterator()
 	if len(it.intervals) > 0 {
 		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
@@ -814,6 +829,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 			return true
 		}
 	}
+	it.cur.Close()
 	return false
 }
 
@@ -831,14 +847,20 @@ func (it *chunkSeriesIterator) Next() bool {
 			}
 			t, _ = it.At()
 
-			return t <= it.maxt
+			if t > it.maxt {
+				it.Close()
+				return false
+			}
+			return true
 		}
 		if t > it.maxt {
+			it.Close()
 			return false
 		}
 		return true
 	}
 	if err := it.cur.Err(); err != nil {
+		it.Close()
 		return false
 	}
 	if it.i == len(it.chunks)-1 {
@@ -846,16 +868,25 @@ func (it *chunkSeriesIterator) Next() bool {
 	}
 
 	it.i++
+	it.cur.Close()
 	it.cur = it.chunks[it.i].Chunk.Iterator()
 	if len(it.intervals) > 0 {
 		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
 	}
 
-	return it.Next()
+	if !it.Next() {
+		it.cur.Close()
+		return false
+	}
+	return true
 }
 
 func (it *chunkSeriesIterator) Err() error {
 	return it.cur.Err()
+}
+
+func (it *chunkSeriesIterator) Close() {
+	it.cur.Close()
 }
 
 // deletedIterator wraps an Iterator and makes sure any deleted metrics are not
@@ -896,6 +927,10 @@ Outer:
 
 func (it *deletedIterator) Err() error {
 	return it.it.Err()
+}
+
+func (it *deletedIterator) Close() {
+	it.it.Close()
 }
 
 type mockSeriesSet struct {

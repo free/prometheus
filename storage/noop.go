@@ -77,3 +77,5 @@ func (noopSeriesIterator) Next() bool {
 func (noopSeriesIterator) Err() error {
 	return nil
 }
+
+func (noopSeriesIterator) Close() {}

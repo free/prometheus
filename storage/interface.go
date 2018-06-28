@@ -115,4 +115,6 @@ type SeriesIterator interface {
 	Next() bool
 	// Err returns the current error.
 	Err() error
+	// Close releases any resources held by the iterator.
+	Close()
 }

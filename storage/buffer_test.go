@@ -200,6 +200,7 @@ func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
 func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
 func (m *mockSeriesIterator) Next() bool           { return m.next() }
 func (m *mockSeriesIterator) Err() error           { return m.err() }
+func (m *mockSeriesIterator) Close()               {}
 
 type mockSeries struct {
 	labels   func() labels.Labels
@@ -255,3 +256,5 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 func (it *listSeriesIterator) Err() error {
 	return nil
 }
+
+func (it *listSeriesIterator) Close() {}
