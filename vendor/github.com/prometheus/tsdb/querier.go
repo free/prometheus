@@ -848,19 +848,19 @@ func (it *chunkSeriesIterator) Next() bool {
 			t, _ = it.At()
 
 			if t > it.maxt {
-				it.Close()
+				it.cur.Close()
 				return false
 			}
 			return true
 		}
 		if t > it.maxt {
-			it.Close()
+			it.cur.Close()
 			return false
 		}
 		return true
 	}
 	if err := it.cur.Err(); err != nil {
-		it.Close()
+		it.cur.Close()
 		return false
 	}
 	if it.i == len(it.chunks)-1 {

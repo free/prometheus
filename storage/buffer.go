@@ -137,7 +137,10 @@ func (b *BufferedSeriesIterator) Err() error {
 }
 
 func (b *BufferedSeriesIterator) Close() {
-	b.it.Close()
+	if b != nil && b.it != nil {
+		b.it.Close()
+		b.it = nil
+	}
 }
 
 type sample struct {

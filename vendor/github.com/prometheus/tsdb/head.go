@@ -1104,7 +1104,7 @@ type memSeries struct {
 	nextAt       int64 // timestamp at which to cut the next chunk.
 	lastValue    float64
 	sampleBuf    [128]sample
-	sampleBufIdx int
+	sampleBufPos int
 
 	app chunkenc.Appender // Current appender for the chunk.
 }
@@ -1235,8 +1235,8 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 
 	s.lastValue = v
 
-	s.sampleBuf[s.sampleBufIdx] = sample{t: t, v: v}
-	s.sampleBufIdx = (s.sampleBufIdx + 1) % len(s.sampleBuf)
+	s.sampleBuf[s.sampleBufPos] = sample{t: t, v: v}
+	s.sampleBufPos = (s.sampleBufPos + 1) % len(s.sampleBuf)
 
 	return true, chunkCreated
 }
@@ -1270,7 +1270,7 @@ func (s *memSeries) iterator(id int) chunkenc.Iterator {
 		Iterator: c.chunk.Iterator(),
 		i:        -1,
 		total:    c.chunk.NumSamples(),
-		buf:      getSampleSliceCopy(s.sampleBuf[:], s.sampleBufIdx),
+		buf:      getSampleBufCopy(s.sampleBuf[:], s.sampleBufPos),
 	}
 	return it
 }
@@ -1297,6 +1297,7 @@ type memSafeIterator struct {
 
 func (it *memSafeIterator) Next() bool {
 	if it.i+1 >= it.total {
+		it.Close()
 		return false
 	}
 	it.i++
@@ -1324,7 +1325,7 @@ func (it *memSafeIterator) Close() {
 
 var samplePool = sync.Pool{}
 
-func getSampleSliceCopy(orig []sample, idx int) []sample {
+func getSampleBufCopy(orig []sample, pos int) []sample {
 	var s []sample
 	p := samplePool.Get()
 	if p != nil {
@@ -1332,8 +1333,8 @@ func getSampleSliceCopy(orig []sample, idx int) []sample {
 	} else {
 		s = make([]sample, 0, len(orig))
 	}
-	s = append(s, orig[idx:]...)
-	return append(s, orig[:idx]...)
+	s = append(s, orig[pos:]...)
+	return append(s, orig[:pos]...)
 }
 
 func putSampleSlice(p []sample) {

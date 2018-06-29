@@ -374,6 +374,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
+					// XXX(alin) String() call below causes ~4% of total allocations in steady state.
 					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
