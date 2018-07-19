@@ -382,7 +382,7 @@ func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 
 	for _, alert := range alerts {
 		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
-		if labels != nil {
+		if labels.L != nil {
 			alert.Labels = labels
 			relabeledAlerts = append(relabeledAlerts, alert)
 		}
@@ -624,8 +624,8 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		}
 
 		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
-		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
+		if lset.L == nil {
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{labels.Labels{L: lbls}})
 			continue
 		}
 
@@ -664,7 +664,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		// Meta labels are deleted after relabelling. Other internal labels propagate to
 		// the target which decides whether they will be part of their label set.
-		for _, l := range lset {
+		for _, l := range lset.L {
 			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 				lb.Del(l.Name)
 			}

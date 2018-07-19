@@ -159,7 +159,7 @@ testmetric{label="\"bar\""} 1`
 	p := New([]byte(input))
 	i := 0
 
-	var res labels.Labels
+	res := labels.Labels{}
 
 	for {
 		et, err := p.Next()
@@ -178,7 +178,7 @@ testmetric{label="\"bar\""} 1`
 			require.Equal(t, exp[i].t, ts)
 			require.Equal(t, exp[i].v, v)
 			require.Equal(t, exp[i].lset, res)
-			res = res[:0]
+			res = labels.Labels{}
 
 		case EntryType:
 			m, typ := p.Type()
@@ -368,7 +368,7 @@ func BenchmarkParse(b *testing.B) {
 					case EntrySeries:
 						m, _, _ := p.Series()
 
-						res := make(labels.Labels, 0, 5)
+						res := labels.Labels{L: make([]labels.Label, 0, 5)}
 						p.Metric(&res)
 
 						total += len(m)
@@ -380,7 +380,7 @@ func BenchmarkParse(b *testing.B) {
 		})
 		b.Run("decode-metric-reuse/"+fn, func(b *testing.B) {
 			total := 0
-			res := make(labels.Labels, 0, 5)
+			res := labels.Labels{L: make([]labels.Label, 0, 5)}
 
 			b.SetBytes(int64(len(buf) * (b.N / testdataSampleCount)))
 			b.ReportAllocs()
@@ -405,7 +405,7 @@ func BenchmarkParse(b *testing.B) {
 
 						total += len(m)
 						i++
-						res = res[:0]
+						res = labels.Labels{L: make([]labels.Label, 0, 5)}
 					}
 				}
 			}

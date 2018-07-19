@@ -56,7 +56,7 @@ func (t testTargetRetriever) TargetsActive() []*scrape.Target {
 				model.AddressLabel:     "example.com:8080",
 				model.MetricsPathLabel: "/metrics",
 			}),
-			nil,
+			labels.Labels{L: nil},
 			url.Values{},
 		),
 	}
@@ -64,7 +64,7 @@ func (t testTargetRetriever) TargetsActive() []*scrape.Target {
 func (t testTargetRetriever) TargetsDropped() []*scrape.Target {
 	return []*scrape.Target{
 		scrape.NewTarget(
-			nil,
+			labels.Labels{L: nil},
 			labels.FromMap(map[string]string{
 				model.AddressLabel:     "http://dropped.example.com:9115",
 				model.MetricsPathLabel: "/probe",
@@ -321,7 +321,7 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: nil,
+						Metric: labels.Labels{L: nil},
 					},
 				},
 			},
@@ -620,6 +620,16 @@ func testEndpoints(t *testing.T, api *API, testLabelAPI bool) {
 	}
 
 	for i, test := range tests {
+		// Memoize the hash of all expected metrics, so they're equal to metrics in query results.
+		if test.response != nil {
+			if response, ok := test.response.(*queryData); ok {
+				if matrix, ok := response.Result.(promql.Matrix); ok {
+					for i, _ := range matrix {
+						matrix[i].Metric.Hash()
+					}
+				}
+			}
+		}
 		for _, method := range methods(test.endpoint) {
 			// Build a context with the correct request params.
 			ctx := context.Background()
@@ -1073,7 +1083,7 @@ func BenchmarkRespond(b *testing.B) {
 		Result: promql.Matrix{
 			promql.Series{
 				Points: points,
-				Metric: nil,
+				Metric: labels.Labels{L: nil},
 			},
 		},
 	}

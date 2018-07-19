@@ -1330,7 +1330,7 @@ func resultMetric(lhs, rhs labels.Labels, op ItemType, matching *VectorMatching,
 	if matching.Card == CardOneToOne {
 		if matching.On {
 		Outer:
-			for _, l := range lhs {
+			for _, l := range lhs.L {
 				for _, n := range matching.MatchingLabels {
 					if l.Name == n {
 						continue Outer
@@ -1453,12 +1453,14 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 
 // intersection returns the metric of common label/value pairs of two input metrics.
 func intersection(ls1, ls2 labels.Labels) labels.Labels {
-	res := make(labels.Labels, 0, 5)
+	res := labels.Labels{
+		L: make([]labels.Label, 0, 5),
+	}
 
-	for _, l1 := range ls1 {
-		for _, l2 := range ls2 {
+	for _, l1 := range ls1.L {
+		for _, l2 := range ls2.L {
 			if l1.Name == l2.Name && l1.Value == l2.Value {
-				res = append(res, l1)
+				res.L = append(res.L, l1)
 				continue
 			}
 		}
@@ -1531,11 +1533,13 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 				lb.Del(labels.MetricName)
 				m = lb.Labels()
 			} else {
-				m = make(labels.Labels, 0, len(grouping))
-				for _, l := range metric {
+				m = labels.Labels{
+					L: make([]labels.Label, 0, len(grouping)),
+				}
+				for _, l := range metric.L {
 					for _, n := range grouping {
 						if l.Name == n {
-							m = append(m, l)
+							m.L = append(m.L, l)
 							break
 						}
 					}

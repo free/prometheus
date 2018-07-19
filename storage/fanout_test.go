@@ -247,7 +247,7 @@ var result []sample
 func makeSeriesSet(numSeries, numSamples int) SeriesSet {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
-		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
+		labels := labels.Labels{L: []labels.Label{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}}
 		samples := []sample{}
 		for k := 0; k < numSamples; k++ {
 			samples = append(samples, sample{t: int64(k), v: float64(k)})

@@ -140,10 +140,10 @@ func (t *Target) offset(interval time.Duration) time.Duration {
 
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels() labels.Labels {
-	lset := make(labels.Labels, 0, len(t.labels))
-	for _, l := range t.labels {
+	lset := labels.Labels{L: make([]labels.Label, 0, len(t.labels.L))}
+	for _, l := range t.labels.L {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
-			lset = append(lset, l)
+			lset.L = append(lset.L, l)
 		}
 	}
 	return lset
@@ -153,8 +153,8 @@ func (t *Target) Labels() labels.Labels {
 func (t *Target) DiscoveredLabels() labels.Labels {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
-	lset := make(labels.Labels, len(t.discoveredLabels))
-	copy(lset, t.discoveredLabels)
+	lset := labels.Labels{L: make([]labels.Label, len(t.discoveredLabels.L))}
+	copy(lset.L, t.discoveredLabels.L)
 	return lset
 }
 
@@ -173,7 +173,7 @@ func (t *Target) URL() *url.URL {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
-	for _, l := range t.labels {
+	for _, l := range t.labels.L {
 		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
 			continue
 		}
@@ -328,11 +328,11 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
-	if lset == nil {
-		return nil, preRelabelLabels, nil
+	if lset.L == nil {
+		return labels.Labels{L: nil}, preRelabelLabels, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, fmt.Errorf("no address")
+		return labels.Labels{L: nil}, labels.Labels{L: nil}, fmt.Errorf("no address")
 	}
 
 	lb = labels.NewBuilder(lset)
@@ -359,18 +359,18 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
+			return labels.Labels{L: nil}, labels.Labels{L: nil}, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-		return nil, nil, err
+		return labels.Labels{L: nil}, labels.Labels{L: nil}, err
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
-	for _, l := range lset {
+	for _, l := range lset.L {
 		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 			lb.Del(l.Name)
 		}
@@ -382,10 +382,10 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	}
 
 	res = lb.Labels()
-	for _, l := range res {
+	for _, l := range res.L {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return labels.Labels{L: nil}, labels.Labels{L: nil}, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
 	return res, preRelabelLabels, nil
@@ -409,12 +409,12 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lset := labels.New(lbls...)
 
-		lbls, origLabels, err := populateLabels(lset, cfg)
+		ls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("instance %d in group %s: %s", i, tg, err)
 		}
-		if lbls != nil || origLabels != nil {
-			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
+		if ls.L != nil || origLabels.L != nil {
+			targets = append(targets, NewTarget(ls, origLabels, cfg.Params))
 		}
 	}
 	return targets, nil

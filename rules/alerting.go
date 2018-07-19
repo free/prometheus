@@ -138,7 +138,7 @@ func (r *AlertingRule) equal(o *AlertingRule) bool {
 func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
-	for _, l := range alert.Labels {
+	for _, l := range alert.Labels.L {
 		lb.Set(l.Name, l.Value)
 	}
 
@@ -188,8 +188,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 	for _, smpl := range res {
 		// Provide the alert information to the template.
-		l := make(map[string]string, len(smpl.Metric))
-		for _, lbl := range smpl.Metric {
+		l := make(map[string]string, smpl.Metric.Len())
+		for _, lbl := range smpl.Metric.L {
 			l[lbl.Name] = lbl.Value
 		}
 
@@ -224,14 +224,14 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
 
-		for _, l := range r.labels {
+		for _, l := range r.labels.L {
 			lb.Set(l.Name, expand(l.Value))
 		}
 		lb.Set(labels.AlertName, r.Name())
 
-		annotations := make(labels.Labels, 0, len(r.annotations))
-		for _, a := range r.annotations {
-			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
+		annotations := labels.Labels{L: make([]labels.Label, 0, r.annotations.Len())}
+		for _, a := range r.annotations.L {
+			annotations.L = append(annotations.L, labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
 		h := smpl.Metric.Hash()
@@ -348,13 +348,13 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 		alertNameLabel:        model.LabelValue(r.name),
 	}
 
-	labels := make(map[string]string, len(r.labels))
-	for _, l := range r.labels {
+	labels := make(map[string]string, r.labels.Len())
+	for _, l := range r.labels.L {
 		labels[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 
-	annotations := make(map[string]string, len(r.annotations))
-	for _, l := range r.annotations {
+	annotations := make(map[string]string, r.annotations.Len())
+	for _, l := range r.annotations.L {
 		annotations[l.Name] = html_template.HTMLEscapeString(l.Value)
 	}
 

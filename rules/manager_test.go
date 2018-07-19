@@ -51,7 +51,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil,
+		labels.Labels{L: nil}, nil,
 	)
 	result := promql.Vector{
 		{
@@ -244,41 +244,41 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewRecordingRule("rule2", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
+			NewAlertingRule("alert", nil, 0, labels.Labels{L: nil}, labels.Labels{L: nil}, nil),
+			NewRecordingRule("rule1", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule2", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule3", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule3", nil, labels.Labels{L: nil}),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
-			map[string]labels.Labels{"a": nil},
-			map[string]labels.Labels{"r1": nil},
-			map[string]labels.Labels{"r2": nil},
-			map[string]labels.Labels{"r3a": nil},
-			map[string]labels.Labels{"r3b": nil},
+			map[string]labels.Labels{"a": labels.Labels{L: nil}},
+			map[string]labels.Labels{"r1": labels.Labels{L: nil}},
+			map[string]labels.Labels{"r2": labels.Labels{L: nil}},
+			map[string]labels.Labels{"r3a": labels.Labels{L: nil}},
+			map[string]labels.Labels{"r3b": labels.Labels{L: nil}},
 		},
 		evaluationDuration: time.Second,
 	}
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewRecordingRule("rule3", nil, nil),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewRecordingRule("rule4", nil, nil),
+			NewRecordingRule("rule3", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule3", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule3", nil, labels.Labels{L: nil}),
+			NewAlertingRule("alert", nil, 0, labels.Labels{L: nil}, labels.Labels{L: nil}, nil),
+			NewRecordingRule("rule1", nil, labels.Labels{L: nil}),
+			NewRecordingRule("rule4", nil, labels.Labels{L: nil}),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 6),
 	}
 	newGroup.CopyState(oldGroup)
 
 	want := []map[string]labels.Labels{
-		map[string]labels.Labels{"r3a": nil},
-		map[string]labels.Labels{"r3b": nil},
+		map[string]labels.Labels{"r3a": labels.Labels{L: nil}},
+		map[string]labels.Labels{"r3b": labels.Labels{L: nil}},
 		nil,
-		map[string]labels.Labels{"a": nil},
-		map[string]labels.Labels{"r1": nil},
+		map[string]labels.Labels{"a": labels.Labels{L: nil}},
+		map[string]labels.Labels{"r1": labels.Labels{L: nil}},
 		nil,
 	}
 	testutil.Equals(t, want, newGroup.seriesInPreviousEval)

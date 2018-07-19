@@ -31,8 +31,8 @@ import (
 func Process(labels labels.Labels, cfgs ...*config.RelabelConfig) labels.Labels {
 	for _, cfg := range cfgs {
 		labels = relabel(labels, cfg)
-		if labels == nil {
-			return nil
+		if labels.L == nil {
+			break
 		}
 	}
 	return labels
@@ -50,11 +50,11 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 	switch cfg.Action {
 	case config.RelabelDrop:
 		if cfg.Regex.MatchString(val) {
-			return nil
+			return labels.Labels{L: nil}
 		}
 	case config.RelabelKeep:
 		if !cfg.Regex.MatchString(val) {
-			return nil
+			return labels.Labels{L: nil}
 		}
 	case config.RelabelReplace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -77,20 +77,20 @@ func relabel(lset labels.Labels, cfg *config.RelabelConfig) labels.Labels {
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case config.RelabelLabelMap:
-		for _, l := range lset {
+		for _, l := range lset.L {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}
 		}
 	case config.RelabelLabelDrop:
-		for _, l := range lset {
+		for _, l := range lset.L {
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
 	case config.RelabelLabelKeep:
-		for _, l := range lset {
+		for _, l := range lset.L {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}

@@ -282,8 +282,10 @@ load 10s
 		{
 			Query: "metric",
 			Result: Vector{
-				Sample{Point: Point{V: 1, T: 1000},
-					Metric: labels.FromStrings("__name__", "metric")},
+				Sample{
+					Point:  Point{V: 1, T: 1000},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
 			},
 			Start: time.Unix(1, 0),
 		},
@@ -300,7 +302,7 @@ load 10s
 			Query: "1",
 			Result: Matrix{Series{
 				Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-				Metric: labels.FromStrings()},
+				Metric: labels.Labels{L: nil}},
 			},
 			Start:    time.Unix(0, 0),
 			End:      time.Unix(2, 0),
@@ -343,6 +345,17 @@ load 10s
 		if res.Err != nil {
 			t.Fatalf("unexpected error running query: %q", res.Err)
 		}
+		// Populate label hashes, or DeepEqual might fail.
+		populateHash := func(res interface{}) {
+			switch v := res.(type) {
+			case Matrix:
+				v[0].Metric.Hash()
+			case Vector:
+				v[0].Metric.Hash()
+			}
+		}
+		populateHash(c.Result)
+		populateHash(res.Value)
 		if !reflect.DeepEqual(res.Value, c.Result) {
 			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
 		}

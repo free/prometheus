@@ -130,8 +130,8 @@ func TestPopulateLabels(t *testing.T) {
 				MetricsPath: "/metrics",
 				JobName:     "job",
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.Labels{L: nil},
+			resOrig: labels.Labels{L: nil},
 			err:     fmt.Errorf("no address"),
 		},
 		// Address label missing, but added in relabelling.
@@ -209,8 +209,8 @@ func TestPopulateLabels(t *testing.T) {
 				MetricsPath: "/metrics",
 				JobName:     "job",
 			},
-			res:     nil,
-			resOrig: nil,
+			res:     labels.Labels{L: nil},
+			resOrig: labels.Labels{L: nil},
 			err:     fmt.Errorf("invalid label value for \"custom\": \"\\xbd\""),
 		},
 	}

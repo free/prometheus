@@ -232,7 +232,8 @@ type concreteSeries struct {
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
-	return labels.New(c.labels...)
+	// FIXME(free): Why? If actually necessary, a comment would help.
+	return labels.New(c.labels.L...)
 }
 
 func (c *concreteSeries) Iterator() storage.SeriesIterator {
@@ -279,7 +280,7 @@ func (c *concreteSeriesIterator) Err() error {
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read.
 func validateLabelsAndMetricName(ls labels.Labels) error {
-	for _, l := range ls {
+	for _, l := range ls.L {
 		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
 			return fmt.Errorf("Invalid metric name: %v", l.Value)
 		}
@@ -368,9 +369,9 @@ func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 }
 
 func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
-	result := make(labels.Labels, 0, len(labelPairs))
+	result := labels.Labels{L: make([]labels.Label, 0, len(labelPairs))}
 	for _, l := range labelPairs {
-		result = append(result, labels.Label{
+		result.L = append(result.L, labels.Label{
 			Name:  l.Name,
 			Value: l.Value,
 		})
@@ -380,8 +381,8 @@ func labelProtosToLabels(labelPairs []*prompb.Label) labels.Labels {
 }
 
 func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
-	result := make([]*prompb.Label, 0, len(labels))
-	for _, l := range labels {
+	result := make([]*prompb.Label, 0, len(labels.L))
+	for _, l := range labels.L {
 		result = append(result, &prompb.Label{
 			Name:  l.Name,
 			Value: l.Value,
@@ -391,8 +392,8 @@ func labelsToLabelsProto(labels labels.Labels) []*prompb.Label {
 }
 
 func labelsToMetric(ls labels.Labels) model.Metric {
-	metric := make(model.Metric, len(ls))
-	for _, l := range ls {
+	metric := make(model.Metric, len(ls.L))
+	for _, l := range ls.L {
 		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return metric

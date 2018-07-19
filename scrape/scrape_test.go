@@ -110,20 +110,20 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	sp.targets = make(map[uint64]*Target)
 	t1 := &Target{
 		discoveredLabels: labels.Labels{
-			labels.Label{
+			L: []labels.Label{{
 				Name:  "label",
 				Value: "name",
-			},
+			}},
 		},
 	}
 	sp.targets[t1.hash()] = t1
 
 	t2 := &Target{
 		discoveredLabels: labels.Labels{
-			labels.Label{
+			L: []labels.Label{{
 				Name:  "labelNew",
 				Value: "nameNew",
-			},
+			}},
 		},
 	}
 	sp.sync([]*Target{t2})
@@ -842,6 +842,9 @@ func TestScrapeLoopAppend(t *testing.T) {
 			app.result[0].v = expected[0].v
 		}
 
+		// Memoize the hash of all metrics.
+		memoizeMetricHashes(expected, app.result)
+
 		t.Logf("Test:%s", test.title)
 		testutil.Equals(t, expected, app.result)
 	}
@@ -893,6 +896,10 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			v:      1,
 		},
 	}
+
+	// Memoize the hash of all metrics.
+	memoizeMetricHashes(want, resApp.result)
+
 	if !reflect.DeepEqual(want, resApp.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, resApp.result)
 	}
@@ -942,6 +949,10 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 			v:      2,
 		},
 	}
+
+	// Memoize the hash of all metrics.
+	memoizeMetricHashes(want, capp.result)
+
 	if !reflect.DeepEqual(want, capp.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, capp.result)
 	}
@@ -987,6 +998,10 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 			v:      42,
 		},
 	}
+
+	// Memoize the hash of all metrics.
+	memoizeMetricHashes(want, app.result)
+
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
@@ -1020,6 +1035,10 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 			v:      1,
 		},
 	}
+
+	// Memoize the hash of both metrics.
+	memoizeMetricHashes(want, app.result)
+
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
@@ -1129,6 +1148,10 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			v:      1,
 		},
 	}
+
+	// Memoize the hash of both metrics.
+	memoizeMetricHashes(want, app.result)
+
 	if !reflect.DeepEqual(want, app.result) {
 		t.Fatalf("Appended samples not as expected. Wanted: %+v Got: %+v", want, app.result)
 	}
@@ -1322,4 +1345,12 @@ func (ts *testScraper) scrape(ctx context.Context, w io.Writer) error {
 		return ts.scrapeFunc(ctx, w)
 	}
 	return ts.scrapeErr
+}
+
+func memoizeMetricHashes(sss ...[]sample) {
+	for _, ss := range sss {
+		for i, _ := range ss {
+			ss[i].metric.Hash()
+		}
+	}
 }

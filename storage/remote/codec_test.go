@@ -129,18 +129,20 @@ func TestConcreteSeriesSet(t *testing.T) {
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
 	lbls := labels.Labels{
-		labels.Label{Name: "a", Value: "b"},
-		labels.Label{Name: "c", Value: "d"},
+		L: []labels.Label{
+			labels.Label{Name: "a", Value: "b"},
+			labels.Label{Name: "c", Value: "d"},
+		},
 	}
 	cs := concreteSeries{
-		labels: labels.New(lbls...),
+		labels: labels.New(lbls.L...),
 	}
 
 	gotLabels := cs.Labels()
 	require.Equal(t, lbls, gotLabels)
 
-	gotLabels[0].Value = "foo"
-	gotLabels[1].Value = "bar"
+	gotLabels.L[0].Value = "foo"
+	gotLabels.L[1].Value = "bar"
 
 	gotLabels = cs.Labels()
 	require.Equal(t, lbls, gotLabels)

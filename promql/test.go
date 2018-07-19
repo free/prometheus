@@ -176,7 +176,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 		if f, err := parseNumber(defLine); err == nil {
-			cmd.expect(0, nil, sequenceValue{value: f})
+			cmd.expect(0, labels.Labels{}, sequenceValue{value: f})
 			break
 		}
 		metric, vals, err := parseSeriesDesc(defLine)
@@ -338,7 +338,7 @@ func (ev *evalCmd) String() string {
 // expect adds a new metric with a sequence of values to the set of expected
 // results for the query.
 func (ev *evalCmd) expect(pos int, m labels.Labels, vals ...sequenceValue) {
-	if m == nil {
+	if m.L == nil {
 		ev.expected[0] = entry{pos: pos, vals: vals}
 		return
 	}

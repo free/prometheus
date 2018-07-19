@@ -215,9 +215,10 @@ type seriesFilter struct {
 
 func (sf seriesFilter) Labels() labels.Labels {
 	labels := sf.Series.Labels()
-	for i := 0; i < len(labels); {
-		if _, ok := sf.toFilter[model.LabelName(labels[i].Name)]; ok {
-			labels = labels[:i+copy(labels[i:], labels[i+1:])]
+	// FIXME(free): This looks to be altering an existing Labels instance, the hash (if already memoized) will be wrong.
+	for i := 0; i < len(labels.L); {
+		if _, ok := sf.toFilter[model.LabelName(labels.L[i].Name)]; ok {
+			labels.L = labels.L[:i+copy(labels.L[i:], labels.L[i+1:])]
 			continue
 		}
 		i++

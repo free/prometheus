@@ -1495,7 +1495,7 @@ var testStatement = []struct {
 						},
 					},
 				},
-				Labels: nil,
+				Labels: labels.Labels{L: nil},
 			},
 			&AlertStmt{
 				Name: "GlobalRequestRateLow",
@@ -1582,7 +1582,7 @@ var testStatement = []struct {
 					},
 					RHS: &NumberLiteral{1},
 				},
-				Labels: labels.Labels{},
+				Labels: labels.Labels{L: []labels.Label{}},
 				Annotations: labels.FromStrings(
 					"summary", "Global request rate low",
 					"description", "The global request rate is low",
@@ -1612,7 +1612,7 @@ var testStatement = []struct {
 			&RecordStmt{
 				Name:   "foo",
 				Expr:   &Call{Func: mustGetFunction("time")},
-				Labels: nil,
+				Labels: labels.Labels{L: nil},
 			}},
 	}, {
 		input: "foo = 1",
@@ -1620,7 +1620,7 @@ var testStatement = []struct {
 			&RecordStmt{
 				Name:   "foo",
 				Expr:   &NumberLiteral{1},
-				Labels: nil,
+				Labels: labels.Labels{L: nil},
 			}},
 	}, {
 		input: "foo = bar[5m]",
@@ -1704,7 +1704,7 @@ var testSeries = []struct {
 }{
 	{
 		input:          `{} 1 2 3`,
-		expectedMetric: labels.Labels{},
+		expectedMetric: labels.Labels{L: []labels.Label{}},
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `{a="b"} -1 2 3`,

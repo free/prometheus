@@ -126,9 +126,9 @@ var (
 
 func labelsToProto(lset labels.Labels) pb.Labels {
 	r := pb.Labels{
-		Labels: make([]pb.Label, 0, len(lset)),
+		Labels: make([]pb.Label, 0, len(lset.L)),
 	}
-	for _, l := range lset {
+	for _, l := range lset.L {
 		r.Labels = append(r.Labels, pb.Label{Name: l.Name, Value: l.Value})
 	}
 	return r

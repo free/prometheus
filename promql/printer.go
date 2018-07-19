@@ -104,10 +104,10 @@ func (node *AlertStmt) String() string {
 	if node.Duration > 0 {
 		s += fmt.Sprintf("\n\tFOR %s", model.Duration(node.Duration))
 	}
-	if len(node.Labels) > 0 {
+	if node.Labels.Len() > 0 {
 		s += fmt.Sprintf("\n\tLABELS %s", node.Labels)
 	}
-	if len(node.Annotations) > 0 {
+	if node.Annotations.Len() > 0 {
 		s += fmt.Sprintf("\n\tANNOTATIONS %s", node.Annotations)
 	}
 	return s

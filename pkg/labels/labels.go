@@ -16,6 +16,7 @@ package labels
 import (
 	"bytes"
 	"encoding/json"
+	//	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,17 +41,20 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []Label
+type Labels struct {
+	L    []Label
+	hash uint64
+}
 
-func (ls Labels) Len() int           { return len(ls) }
-func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
+func (ls Labels) Len() int           { return len(ls.L) }
+func (ls Labels) Swap(i, j int)      { ls.L[i], ls.L[j] = ls.L[j], ls.L[i] }
+func (ls Labels) Less(i, j int) bool { return ls.L[i].Name < ls.L[j].Name }
 
 func (ls Labels) String() string {
 	var b bytes.Buffer
 
 	b.WriteByte('{')
-	for i, l := range ls {
+	for i, l := range ls.L {
 		if i > 0 {
 			b.WriteByte(',')
 			b.WriteByte(' ')
@@ -82,23 +86,28 @@ func (ls *Labels) UnmarshalJSON(b []byte) error {
 }
 
 // Hash returns a hash value for the label set.
-func (ls Labels) Hash() uint64 {
+func (ls *Labels) Hash() uint64 {
+	if ls.hash != 0 {
+		return ls.hash
+	}
 	b := make([]byte, 0, 1024)
 
-	for _, v := range ls {
+	for _, v := range ls.L {
 		b = append(b, v.Name...)
 		b = append(b, sep)
 		b = append(b, v.Value...)
 		b = append(b, sep)
 	}
-	return xxhash.Sum64(b)
+	ls.hash = xxhash.Sum64(b)
+	//	fmt.Printf("  %#v\n", ls)
+	return ls.hash
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.
 func (ls Labels) HashForLabels(names ...string) uint64 {
 	b := make([]byte, 0, 1024)
 
-	for _, v := range ls {
+	for _, v := range ls.L {
 		for _, n := range names {
 			if v.Name == n {
 				b = append(b, v.Name...)
@@ -118,7 +127,7 @@ func (ls Labels) HashWithoutLabels(names ...string) uint64 {
 	b := make([]byte, 0, 1024)
 
 Outer:
-	for _, v := range ls {
+	for _, v := range ls.L {
 		if v.Name == MetricName {
 			continue
 		}
@@ -137,15 +146,18 @@ Outer:
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	res := make(Labels, len(ls))
-	copy(res, ls)
+	res := Labels{
+		L:    make([]Label, len(ls.L)),
+		hash: ls.hash,
+	}
+	copy(res.L, ls.L)
 	return res
 }
 
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
-	for _, l := range ls {
+	for _, l := range ls.L {
 		if l.Name == name {
 			return l.Value
 		}
@@ -155,7 +167,7 @@ func (ls Labels) Get(name string) string {
 
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
-	for _, l := range ls {
+	for _, l := range ls.L {
 		if l.Name == name {
 			return true
 		}
@@ -165,11 +177,14 @@ func (ls Labels) Has(name string) bool {
 
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
-	if len(ls) != len(o) {
+	if len(ls.L) != len(o.L) {
 		return false
 	}
-	for i, l := range ls {
-		if l.Name != o[i].Name || l.Value != o[i].Value {
+	if ls.hash != 0 && o.hash != 0 && ls.hash != o.hash {
+		return false
+	}
+	for i, l := range ls.L {
+		if l.Name != o.L[i].Name || l.Value != o.L[i].Value {
 			return false
 		}
 	}
@@ -178,8 +193,8 @@ func Equal(ls, o Labels) bool {
 
 // Map returns a string map of the labels.
 func (ls Labels) Map() map[string]string {
-	m := make(map[string]string, len(ls))
-	for _, l := range ls {
+	m := make(map[string]string, len(ls.L))
+	for _, l := range ls.L {
 		m[l.Name] = l.Value
 	}
 	return m
@@ -188,9 +203,11 @@ func (ls Labels) Map() map[string]string {
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	set := make(Labels, 0, len(ls))
+	set := Labels{
+		L: make([]Label, 0, len(ls)),
+	}
 	for _, l := range ls {
-		set = append(set, l)
+		set.L = append(set.L, l)
 	}
 	sort.Sort(set)
 
@@ -199,11 +216,15 @@ func New(ls ...Label) Labels {
 
 // FromMap returns new sorted Labels from the given map.
 func FromMap(m map[string]string) Labels {
-	l := make([]Label, 0, len(m))
-	for k, v := range m {
-		l = append(l, Label{Name: k, Value: v})
+	ls := Labels{
+		L: make([]Label, 0, len(m)),
 	}
-	return New(l...)
+	for k, v := range m {
+		ls.L = append(ls.L, Label{Name: k, Value: v})
+	}
+	sort.Sort(ls)
+
+	return ls
 }
 
 // FromStrings creates new labels from pairs of strings.
@@ -211,9 +232,11 @@ func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
-	var res Labels
+	res := Labels{
+		L: make([]Label, 0, len(ss)/2),
+	}
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		res.L = append(res.L, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
 	sort.Sort(res)
@@ -223,21 +246,23 @@ func FromStrings(ss ...string) Labels {
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
 func Compare(a, b Labels) int {
-	l := len(a)
-	if len(b) < l {
-		l = len(b)
+	al := a.L
+	bl := b.L
+	l := len(al)
+	if len(bl) < l {
+		l = len(bl)
 	}
 
 	for i := 0; i < l; i++ {
-		if d := strings.Compare(a[i].Name, b[i].Name); d != 0 {
+		if d := strings.Compare(al[i].Name, bl[i].Name); d != 0 {
 			return d
 		}
-		if d := strings.Compare(a[i].Value, b[i].Value); d != 0 {
+		if d := strings.Compare(al[i].Value, bl[i].Value); d != 0 {
 			return d
 		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a) - len(b)
+	return len(al) - len(bl)
 }
 
 // Builder allows modifiying Labels.
@@ -291,9 +316,11 @@ func (b *Builder) Labels() Labels {
 
 	// In the general case, labels are removed, modified or moved
 	// rather than added.
-	res := make(Labels, 0, len(b.base))
+	res := Labels{
+		L: make([]Label, 0, len(b.base.L)),
+	}
 Outer:
-	for _, l := range b.base {
+	for _, l := range b.base.L {
 		for _, n := range b.del {
 			if l.Name == n {
 				continue Outer
@@ -304,9 +331,9 @@ Outer:
 				continue Outer
 			}
 		}
-		res = append(res, l)
+		res.L = append(res.L, l)
 	}
-	res = append(res, b.add...)
+	res.L = append(res.L, b.add...)
 	sort.Sort(res)
 
 	return res

@@ -101,7 +101,7 @@ func TestRelabel(t *testing.T) {
 					Action:       config.RelabelReplace,
 				},
 			},
-			output: nil,
+			output: labels.Labels{L: nil},
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -115,7 +115,7 @@ func TestRelabel(t *testing.T) {
 					Action:       config.RelabelDrop,
 				},
 			},
-			output: nil,
+			output: labels.Labels{L: nil},
 		},
 		{
 			input: labels.FromMap(map[string]string{
@@ -177,7 +177,7 @@ func TestRelabel(t *testing.T) {
 					Action:       config.RelabelKeep,
 				},
 			},
-			output: nil,
+			output: labels.Labels{L: nil},
 		},
 		{
 			input: labels.FromMap(map[string]string{

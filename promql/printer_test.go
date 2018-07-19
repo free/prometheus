@@ -45,7 +45,7 @@ func TestStatementString(t *testing.T) {
 	ANNOTATIONS {notify="team-a"}`
 
 	if in.String() != expected {
-		t.Fatalf("expected:\n%s\ngot:\n%s\n", expected, in.String())
+		t.Fatalf("expected:\n%s\ngot:\n%s\n", expected, in)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestStmtsString(t *testing.T) {
 			exp = test.out
 		}
 		if expr.String() != exp {
-			t.Fatalf("expected %q to be returned as:\n%s\ngot:\n%s\n", test.in, exp, expr.String())
+			t.Fatalf("expected %q to be returned as:\n%s\ngot:\n%s\n", test.in, exp, expr)
 		}
 	}
 }

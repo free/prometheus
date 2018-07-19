@@ -66,7 +66,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 		lb.Set(labels.MetricName, rule.name)
 
-		for _, l := range rule.labels {
+		for _, l := range rule.labels.L {
 			if l.Value == "" {
 				lb.Del(l.Name)
 			} else {
@@ -112,8 +112,8 @@ func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
 // HTMLSnippet returns an HTML snippet representing this rule.
 func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	ruleExpr := rule.vector.String()
-	labels := make(map[string]string, len(rule.labels))
-	for _, l := range rule.labels {
+	labels := make(map[string]string, rule.labels.Len())
+	for _, l := range rule.labels.L {
 		labels[l.Name] = template.HTMLEscapeString(l.Value)
 	}
 

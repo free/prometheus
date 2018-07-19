@@ -361,13 +361,13 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*co
 	lb := labels.NewBuilder(lset)
 
 	if honor {
-		for _, l := range target.Labels() {
+		for _, l := range target.Labels().L {
 			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
 		}
 	} else {
-		for _, l := range target.Labels() {
+		for _, l := range target.Labels().L {
 			lv := lset.Get(l.Name)
 			if lv != "" {
 				lb.Set(model.ExportedLabelPrefix+l.Name, lv)
@@ -376,7 +376,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*co
 		}
 	}
 
-	for _, l := range lb.Labels() {
+	for _, l := range lb.Labels().L {
 		if l.Value == "" {
 			lb.Del(l.Name)
 		}
@@ -394,7 +394,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*co
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
 	lb := labels.NewBuilder(lset)
 
-	for _, l := range target.Labels() {
+	for _, l := range target.Labels().L {
 		lv := lset.Get(l.Name)
 		if lv != "" {
 			lb.Set(model.ExportedLabelPrefix+l.Name, lv)
@@ -994,7 +994,7 @@ loop:
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to nil to indicate dropping.
-			if lset == nil {
+			if lset.L == nil {
 				sl.cache.addDropped(mets)
 				continue
 			}
@@ -1169,7 +1169,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
-		labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]},
+		L: []labels.Label{labels.Label{Name: labels.MetricName, Value: s[:len(s)-1]}},
 	}
 
 	hash := lset.Hash()
