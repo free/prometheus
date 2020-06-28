@@ -16,7 +16,6 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -262,20 +261,13 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	amSets := make(map[string]*alertmanagerSet)
 
-	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
-		ams, err := newAlertmanagerSet(cfg, n.logger)
+	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
+		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
 		}
 
-		ams.metrics = n.metrics
-
-		// The config hash is used for the map lookup identifier.
-		b, err := json.Marshal(cfg)
-		if err != nil {
-			return err
-		}
-		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
+		amSets[k] = ams
 	}
 
 	n.alertmanagers = amSets
@@ -457,6 +449,10 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
+	if len(alerts) == 0 {
+		return true
+	}
+
 	begin := time.Now()
 
 	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
@@ -487,6 +483,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v1Payload, err = json.Marshal(alerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -501,6 +498,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					v2Payload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
 						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v2 failed", "err", err)
+						ams.mtx.RUnlock()
 						return false
 					}
 				}
@@ -513,6 +511,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					"msg", fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 					"err", err,
 				)
+				ams.mtx.RUnlock()
 				return false
 			}
 		}
@@ -567,7 +566,7 @@ func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
 func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 	apiLabelSet := models.LabelSet{}
 	for _, label := range modelLabelSet {
-		apiLabelSet[label.Name] = string(label.Value)
+		apiLabelSet[label.Name] = label.Value
 	}
 
 	return apiLabelSet
@@ -594,7 +593,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 		return errors.Errorf("bad response status %s", resp.Status)
 	}
 
-	return err
+	return nil
 }
 
 // Stop shuts down the notification handler.
@@ -634,15 +633,16 @@ type alertmanagerSet struct {
 	logger     log.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false)
 	if err != nil {
 		return nil, err
 	}
 	s := &alertmanagerSet{
-		client: client,
-		cfg:    cfg,
-		logger: logger,
+		client:  client,
+		cfg:     cfg,
+		logger:  logger,
+		metrics: metrics,
 	}
 	return s, nil
 }

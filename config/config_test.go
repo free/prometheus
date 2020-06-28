@@ -57,6 +57,7 @@ var expectedConf = &Config{
 		ScrapeInterval:     model.Duration(15 * time.Second),
 		ScrapeTimeout:      DefaultGlobalConfig.ScrapeTimeout,
 		EvaluationInterval: model.Duration(30 * time.Second),
+		QueryLogFile:       "",
 
 		ExternalLabels: labels.Labels{
 			{Name: "foo", Value: "bar"},
@@ -73,6 +74,7 @@ var expectedConf = &Config{
 		{
 			URL:           mustParseURL("http://remote1/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
+			Name:          "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
 				{
 					SourceLabels: model.LabelNames{"__name__"},
@@ -88,6 +90,7 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote2/push"),
 			RemoteTimeout: model.Duration(30 * time.Second),
 			QueueConfig:   DefaultQueueConfig,
+			Name:          "rw_tls",
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				TLSConfig: config_util.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
@@ -102,11 +105,13 @@ var expectedConf = &Config{
 			URL:           mustParseURL("http://remote1/read"),
 			RemoteTimeout: model.Duration(1 * time.Minute),
 			ReadRecent:    true,
+			Name:          "default",
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
 			RemoteTimeout:    model.Duration(1 * time.Minute),
 			ReadRecent:       false,
+			Name:             "read_special",
 			RequiredMatchers: model.LabelSet{"job": "special"},
 			HTTPClientConfig: config_util.HTTPClientConfig{
 				TLSConfig: config_util.TLSConfig{
@@ -585,8 +590,8 @@ var expectedConf = &Config{
 			ServiceDiscoveryConfig: sd_config.ServiceDiscoveryConfig{
 				TritonSDConfigs: []*triton.SDConfig{
 					{
-
 						Account:         "testAccount",
+						Role:            "container",
 						DNSSuffix:       "triton.example.com",
 						Endpoint:        "triton.example.com",
 						Port:            9163,
@@ -664,6 +669,15 @@ func TestLoadConfig(t *testing.T) {
 	testutil.Equals(t, expectedConf, c)
 }
 
+func TestScrapeIntervalLarger(t *testing.T) {
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(c.ScrapeConfigs))
+	for _, sc := range c.ScrapeConfigs {
+		testutil.Equals(t, true, sc.ScrapeInterval >= sc.ScrapeTimeout)
+	}
+}
+
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml")
@@ -692,6 +706,19 @@ func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
 	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	testutil.Ok(t, err)
+}
+
+func TestKubernetesSelectors(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	testutil.Ok(t, err)
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
 	testutil.Ok(t, err)
 }
 
@@ -778,8 +805,29 @@ var expectedErrors = []struct {
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
 	}, {
+		filename: "kubernetes_selectors_endpoints.bad.yml",
+		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
+	}, {
+		filename: "kubernetes_selectors_ingress.bad.yml",
+		errMsg:   "ingress role supports only ingress selectors",
+	}, {
+		filename: "kubernetes_selectors_node.bad.yml",
+		errMsg:   "node role supports only node selectors",
+	}, {
+		filename: "kubernetes_selectors_pod.bad.yml",
+		errMsg:   "pod role supports only pod selectors",
+	}, {
+		filename: "kubernetes_selectors_service.bad.yml",
+		errMsg:   "service role supports only service selectors",
+	}, {
 		filename: "kubernetes_namespace_discovery.bad.yml",
 		errMsg:   "field foo not found in type kubernetes.plain",
+	}, {
+		filename: "kubernetes_selectors_duplicated_role.bad.yml",
+		errMsg:   "duplicated selector role: pod",
+	}, {
+		filename: "kubernetes_selectors_incorrect_selector.bad.yml",
+		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
@@ -816,6 +864,12 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
+	}, {
+		filename: "remote_write_dup.bad.yml",
+		errMsg:   `found multiple remote write configs with job name "queue1"`,
+	}, {
+		filename: "remote_read_dup.bad.yml",
+		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
 	{
 		filename: "ec2_filters_empty_values.bad.yml",

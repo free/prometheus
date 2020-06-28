@@ -15,25 +15,35 @@ package promql
 
 import (
 	"context"
-	"reflect"
+	"errors"
+	"io/ioutil"
+	"os"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestQueryConcurrency(t *testing.T) {
+	maxConcurrency := 10
+
+	dir, err := ioutil.TempDir("", "test_concurrency")
+	testutil.Ok(t, err)
+	defer os.RemoveAll(dir)
+	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
+
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       100 * time.Second,
+		Logger:             nil,
+		Reg:                nil,
+		MaxSamples:         10,
+		Timeout:            100 * time.Second,
+		ActiveQueryTracker: queryTracker,
 	}
 
 	engine := NewEngine(opts)
@@ -49,7 +59,7 @@ func TestQueryConcurrency(t *testing.T) {
 		return nil
 	}
 
-	for i := 0; i < opts.MaxConcurrent; i++ {
+	for i := 0; i < maxConcurrency; i++ {
 		q := engine.newTestQuery(f)
 		go q.Exec(ctx)
 		select {
@@ -81,44 +91,42 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
-	for i := 0; i < opts.MaxConcurrent; i++ {
+	for i := 0; i < maxConcurrency; i++ {
 		block <- struct{}{}
 	}
 }
 
 func TestQueryTimeout(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 20,
-		MaxSamples:    10,
-		Timeout:       5 * time.Millisecond,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    5 * time.Millisecond,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
 	query := engine.newTestQuery(func(ctx context.Context) error {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return contextDone(ctx, "test statement execution")
 	})
 
 	res := query.Exec(ctx)
-	if res.Err == nil {
-		t.Fatalf("expected timeout error but got none")
-	}
-	if _, ok := res.Err.(ErrQueryTimeout); res.Err != nil && !ok {
-		t.Fatalf("expected timeout error but got: %s", res.Err)
-	}
+	testutil.NotOk(t, res.Err, "expected timeout error but got none")
+
+	var e ErrQueryTimeout
+	testutil.Assert(t, errors.As(res.Err, &e), "expected timeout error but got: %s", res.Err)
 }
+
+const errQueryCanceled = ErrQueryCanceled("test statement execution")
 
 func TestQueryCancel(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -146,12 +154,8 @@ func TestQueryCancel(t *testing.T) {
 	block <- struct{}{}
 	<-processing
 
-	if res.Err == nil {
-		t.Fatalf("expected cancellation error for query1 but got none")
-	}
-	if ee := ErrQueryCanceled("test statement execution"); res.Err != ee {
-		t.Fatalf("expected error %q, got %q", ee, res.Err)
-	}
+	testutil.NotOk(t, res.Err, "expected cancellation error for query1 but got none")
+	testutil.Equals(t, errQueryCanceled, res.Err)
 
 	// Canceling a query before starting it must have no effect.
 	query2 := engine.newTestQuery(func(ctx context.Context) error {
@@ -160,9 +164,7 @@ func TestQueryCancel(t *testing.T) {
 
 	query2.Cancel()
 	res = query2.Exec(ctx)
-	if res.Err != nil {
-		t.Fatalf("unexpected error on executing query2: %s", res.Err)
-	}
+	testutil.Ok(t, res.Err)
 }
 
 // errQuerier implements storage.Querier which always returns error.
@@ -170,29 +172,29 @@ type errQuerier struct {
 	err error
 }
 
-func (q *errQuerier) Select(*storage.SelectParams, ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
-	return errSeriesSet{err: q.err}, nil, q.err
+func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return errSeriesSet{err: q.err}
 }
-func (*errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)             { return nil, nil, nil }
-func (*errQuerier) Close() error                                                { return nil }
+func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
+func (*errQuerier) Close() error                                           { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
 	err error
 }
 
-func (errSeriesSet) Next() bool         { return false }
-func (errSeriesSet) At() storage.Series { return nil }
-func (e errSeriesSet) Err() error       { return e.err }
+func (errSeriesSet) Next() bool                   { return false }
+func (errSeriesSet) At() storage.Series           { return nil }
+func (e errSeriesSet) Err() error                 { return e.err }
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
 
 func TestQueryError(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	errStorage := ErrStorage{errors.New("storage error")}
@@ -203,66 +205,57 @@ func TestQueryError(t *testing.T) {
 	defer cancelCtx()
 
 	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0))
-	if err != nil {
-		t.Fatalf("unexpected error creating query: %q", err)
-	}
+	testutil.Ok(t, err)
+
 	res := vectorQuery.Exec(ctx)
-	if res.Err == nil {
-		t.Fatalf("expected error on failed select but got none")
-	}
-	if res.Err != errStorage {
-		t.Fatalf("expected error %q, got %q", errStorage, res.Err)
-	}
+	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
 	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
-	if err != nil {
-		t.Fatalf("unexpected error creating query: %q", err)
-	}
+	testutil.Ok(t, err)
+
 	res = matrixQuery.Exec(ctx)
-	if res.Err == nil {
-		t.Fatalf("expected error on failed select but got none")
-	}
-	if res.Err != errStorage {
-		t.Fatalf("expected error %q, got %q", errStorage, res.Err)
-	}
+	testutil.NotOk(t, res.Err, "expected error on failed select but got none")
+	testutil.Assert(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 }
 
-// paramCheckerQuerier implements storage.Querier which checks the start and end times
-// in params.
-type paramCheckerQuerier struct {
-	start int64
-	end   int64
+// hintCheckerQuerier implements storage.Querier which checks the start and end times
+// in hints.
+type hintCheckerQuerier struct {
+	start    int64
+	end      int64
+	grouping []string
+	by       bool
+	selRange int64
+	function string
 
 	t *testing.T
 }
 
-func (q *paramCheckerQuerier) Select(sp *storage.SelectParams, _ ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
+func (q *hintCheckerQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	testutil.Equals(q.t, q.start, sp.Start)
 	testutil.Equals(q.t, q.end, sp.End)
+	testutil.Equals(q.t, q.grouping, sp.Grouping)
+	testutil.Equals(q.t, q.by, sp.By)
+	testutil.Equals(q.t, q.selRange, sp.Range)
+	testutil.Equals(q.t, q.function, sp.Func)
 
-	return errSeriesSet{err: nil}, nil, nil
+	return errSeriesSet{err: nil}
 }
-func (*paramCheckerQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+func (*hintCheckerQuerier) LabelValues(string) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
-func (*paramCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*paramCheckerQuerier) Close() error                                    { return nil }
+func (*hintCheckerQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*hintCheckerQuerier) Close() error                                    { return nil }
 
 func TestParamsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
 		Logger:        nil,
 		Reg:           nil,
-		MaxConcurrent: 10,
 		MaxSamples:    10,
 		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Second,
 	}
-
-	// Set the lookback to be smaller and reset at the end.
-	currLookback := LookbackDelta
-	LookbackDelta = 5 * time.Second
-	defer func() {
-		LookbackDelta = currLookback
-	}()
 
 	cases := []struct {
 		query string
@@ -273,6 +266,11 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart int64
 		paramEnd   int64
+
+		paramGrouping []string
+		paramBy       bool
+		paramRange    int64
+		paramFunc     string
 	}{{
 		query: "foo",
 		start: 10,
@@ -285,12 +283,14 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 80, // 200 - 120
 		paramEnd:   200,
+		paramRange: 120000,
 	}, {
 		query: "foo[2m] offset 2m",
 		start: 300,
 
 		paramStart: 60,
 		paramEnd:   180,
+		paramRange: 120000,
 	}, {
 		query: "foo[2m:1s]",
 		start: 300,
@@ -303,18 +303,21 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   300,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)",
 		start: 300,
 
 		paramStart: 165, // 300 - 120 - 5 - 10
 		paramEnd:   300,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
 		start: 300,
 
 		paramStart: 155, // 300 - 120 - 5 - 10 - 10
 		paramEnd:   290,
+		paramFunc:  "count_over_time",
 	}, {
 		// Range queries now.
 		query: "foo",
@@ -330,6 +333,8 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 80, // 200 - 120
 		paramEnd:   500,
+		paramRange: 120000,
+		paramFunc:  "rate",
 	}, {
 		query: "rate(foo[2m] offset 2m)",
 		start: 300,
@@ -337,6 +342,8 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 60,
 		paramEnd:   380,
+		paramRange: 120000,
+		paramFunc:  "rate",
 	}, {
 		query: "rate(foo[2m:1s])",
 		start: 300,
@@ -344,6 +351,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   500,
+		paramFunc:  "rate",
 	}, {
 		query: "count_over_time(foo[2m:1s])",
 		start: 300,
@@ -351,6 +359,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 175, // 300 - 120 - 5
 		paramEnd:   500,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)",
 		start: 300,
@@ -358,6 +367,7 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 165, // 300 - 120 - 5 - 10
 		paramEnd:   500,
+		paramFunc:  "count_over_time",
 	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)",
 		start: 300,
@@ -365,12 +375,59 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 		paramStart: 155, // 300 - 120 - 5 - 10 - 10
 		paramEnd:   490,
+		paramFunc:  "count_over_time",
+	}, {
+		query: "sum by (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
+		paramFunc:     "sum",
+	}, {
+		query: "sum without (dim1) (foo)",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       false,
+		paramFunc:     "sum",
+	}, {
+		query: "sum by (dim1) (avg_over_time(foo[1s]))",
+		start: 10,
+
+		paramStart:    9,
+		paramEnd:      10,
+		paramGrouping: nil,
+		paramBy:       false,
+		paramRange:    1000,
+		paramFunc:     "avg_over_time",
+	}, {
+		query: "sum by (dim1) (max by (dim2) (foo))",
+		start: 10,
+
+		paramStart:    5,
+		paramEnd:      10,
+		paramGrouping: []string{"dim2"},
+		paramBy:       true,
+		paramFunc:     "max",
+	}, {
+		query: "(max by (dim1) (foo))[5s:1s]",
+		start: 10,
+
+		paramStart:    0,
+		paramEnd:      10,
+		paramGrouping: []string{"dim1"},
+		paramBy:       true,
+		paramFunc:     "max",
 	}}
 
 	for _, tc := range cases {
 		engine := NewEngine(opts)
 		queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &paramCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, t: t}, nil
+			return &hintCheckerQuerier{start: tc.paramStart * 1000, end: tc.paramEnd * 1000, grouping: tc.paramGrouping, by: tc.paramBy, selRange: tc.paramRange, function: tc.paramFunc, t: t}, nil
 		})
 
 		var (
@@ -391,11 +448,10 @@ func TestParamsSetCorrectly(t *testing.T) {
 
 func TestEngineShutdown(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxConcurrent: 10,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
 	}
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -427,12 +483,8 @@ func TestEngineShutdown(t *testing.T) {
 	block <- struct{}{}
 	<-processing
 
-	if res.Err == nil {
-		t.Fatalf("expected error on shutdown during query but got none")
-	}
-	if ee := ErrQueryCanceled("test statement execution"); res.Err != ee {
-		t.Fatalf("expected error %q, got %q", ee, res.Err)
-	}
+	testutil.NotOk(t, res.Err, "expected error on shutdown during query but got none")
+	testutil.Equals(t, errQueryCanceled, res.Err)
 
 	query2 := engine.newTestQuery(func(context.Context) error {
 		t.Fatalf("reached query execution unexpectedly")
@@ -442,12 +494,10 @@ func TestEngineShutdown(t *testing.T) {
 	// The second query is started after the engine shut down. It must
 	// be canceled immediately.
 	res2 := query2.Exec(ctx)
-	if res2.Err == nil {
-		t.Fatalf("expected error on querying with canceled context but got none")
-	}
-	if _, ok := res2.Err.(ErrQueryCanceled); !ok {
-		t.Fatalf("expected cancellation error, got %q", res2.Err)
-	}
+	testutil.NotOk(t, res2.Err, "expected error on querying with canceled context but got none")
+
+	var e ErrQueryCanceled
+	testutil.Assert(t, errors.As(res2.Err, &e), "expected cancellation error but got: %s", res2.Err)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
@@ -455,19 +505,15 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 load 10s
   metric 1 2
 `)
-	if err != nil {
-		t.Fatalf("unexpected error creating test: %q", err)
-	}
+	testutil.Ok(t, err)
 	defer test.Close()
 
 	err = test.Run()
-	if err != nil {
-		t.Fatalf("unexpected error initializing test: %q", err)
-	}
+	testutil.Ok(t, err)
 
 	cases := []struct {
 		Query       string
-		Result      Value
+		Result      parser.Value
 		Start       time.Time
 		End         time.Time
 		Interval    time.Duration
@@ -540,39 +586,31 @@ load 10s
 		} else {
 			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
-		if err != nil {
-			t.Fatalf("unexpected error creating query: %q", err)
-		}
+		testutil.Ok(t, err)
+
 		res := qry.Exec(test.Context())
 		if c.ShouldError {
 			testutil.NotOk(t, res.Err, "expected error for the query %q", c.Query)
 			continue
 		}
-		if res.Err != nil {
-			t.Fatalf("unexpected error running query: %q", res.Err)
-		}
-		if !reflect.DeepEqual(res.Value, c.Result) {
-			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
-		}
-	}
 
+		testutil.Ok(t, res.Err)
+		testutil.Equals(t, c.Result, res.Value, "query %q failed", c.Query)
+	}
 }
 
 func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
   metric 1 2
+  bigmetric{a="1"} 1 2
+  bigmetric{a="2"} 1 2
 `)
-
-	if err != nil {
-		t.Fatalf("unexpected error creating test: %q", err)
-	}
+	testutil.Ok(t, err)
 	defer test.Close()
 
 	err = test.Run()
-	if err != nil {
-		t.Fatalf("unexpected error initializing test: %q", err)
-	}
+	testutil.Ok(t, err)
 
 	cases := []struct {
 		Query      string
@@ -758,6 +796,18 @@ load 10s
 			End:      time.Unix(10, 0),
 			Interval: 5 * time.Second,
 		},
+		{
+			Query:      "rate(bigmetric[1s])",
+			MaxSamples: 1,
+			Result: Result{
+				nil,
+				Matrix{},
+				nil,
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(10, 0),
+			Interval: 5 * time.Second,
+		},
 	}
 
 	engine := test.QueryEngine()
@@ -772,16 +822,11 @@ load 10s
 		} else {
 			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
-		if err != nil {
-			t.Fatalf("unexpected error creating query: %q", err)
-		}
+		testutil.Ok(t, err)
+
 		res := qry.Exec(test.Context())
-		if res.Err != nil && res.Err != c.Result.Err {
-			t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
-		}
-		if !reflect.DeepEqual(res.Value, c.Result.Value) {
-			t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
-		}
+		testutil.Equals(t, c.Result.Err, res.Err)
+		testutil.Equals(t, c.Result.Value, res.Value, "query %q failed", c.Query)
 	}
 }
 
@@ -789,7 +834,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	ev := &evaluator{logger: log.NewNopLogger()}
 
 	var err error
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
@@ -812,7 +857,31 @@ func TestRecoverEvaluatorError(t *testing.T) {
 			t.Fatalf("wrong error message: %q, expected %q", err, e)
 		}
 	}()
-	defer ev.recover(&err)
+	defer ev.recover(nil, &err)
+
+	panic(e)
+}
+
+func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
+	ev := &evaluator{logger: log.NewNopLogger()}
+	var err error
+	var ws storage.Warnings
+
+	warnings := storage.Warnings{errors.New("custom warning")}
+	e := errWithWarnings{
+		err:      errors.New("custom error"),
+		warnings: warnings,
+	}
+
+	defer func() {
+		if err.Error() != e.Error() {
+			t.Fatalf("wrong error message: %q, expected %q", err, e)
+		}
+		if len(ws) != len(warnings) && ws[0] != warnings[0] {
+			t.Fatalf("wrong warning message: %q, expected %q", ws[0], warnings[0])
+		}
+	}()
+	defer ev.recover(&ws, &err)
 
 	panic(e)
 }
@@ -1048,16 +1117,12 @@ func TestSubquerySelector(t *testing.T) {
 	SetDefaultEvaluationInterval(1 * time.Minute)
 	for _, tst := range tests {
 		test, err := NewTest(t, tst.loadString)
+		testutil.Ok(t, err)
 
-		if err != nil {
-			t.Fatalf("unexpected error creating test: %q", err)
-		}
 		defer test.Close()
 
 		err = test.Run()
-		if err != nil {
-			t.Fatalf("unexpected error initializing test: %q", err)
-		}
+		testutil.Ok(t, err)
 
 		engine := test.QueryEngine()
 		for _, c := range tst.cases {
@@ -1065,16 +1130,143 @@ func TestSubquerySelector(t *testing.T) {
 			var qry Query
 
 			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-			if err != nil {
-				t.Fatalf("unexpected error creating query: %q", err)
-			}
+			testutil.Ok(t, err)
+
 			res := qry.Exec(test.Context())
-			if res.Err != nil && res.Err != c.Result.Err {
-				t.Fatalf("unexpected error running query: %q, expected to get result: %q", res.Err, c.Result.Value)
-			}
-			if !reflect.DeepEqual(res.Value, c.Result.Value) {
-				t.Fatalf("unexpected result for query %q: got %q wanted %q", c.Query, res.Value.String(), c.Result.String())
-			}
+			testutil.Equals(t, c.Result.Err, res.Err)
+			mat := res.Value.(Matrix)
+			sort.Sort(mat)
+			testutil.Equals(t, c.Result.Value, mat)
 		}
+	}
+}
+
+type FakeQueryLogger struct {
+	closed bool
+	logs   []interface{}
+}
+
+func NewFakeQueryLogger() *FakeQueryLogger {
+	return &FakeQueryLogger{
+		closed: false,
+		logs:   make([]interface{}, 0),
+	}
+}
+
+func (f *FakeQueryLogger) Close() error {
+	f.closed = true
+	return nil
+}
+
+func (f *FakeQueryLogger) Log(l ...interface{}) error {
+	f.logs = append(f.logs, l...)
+	return nil
+}
+
+func TestQueryLogger_basic(t *testing.T) {
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	queryExec := func() {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+		defer cancelCtx()
+		query := engine.newTestQuery(func(ctx context.Context) error {
+			return contextDone(ctx, "test statement execution")
+		})
+		res := query.Exec(ctx)
+		testutil.Ok(t, res.Err)
+	}
+
+	// Query works without query log initialized.
+	queryExec()
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+	queryExec()
+	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}} {
+		testutil.Equals(t, field, f1.logs[i])
+	}
+
+	l := len(f1.logs)
+	queryExec()
+	testutil.Equals(t, 2*l, len(f1.logs))
+
+	// Test that we close the query logger when unsetting it.
+	testutil.Assert(t, !f1.closed, "expected f1 to be open, got closed")
+	engine.SetQueryLogger(nil)
+	testutil.Assert(t, f1.closed, "expected f1 to be closed, got open")
+	queryExec()
+
+	// Test that we close the query logger when swapping.
+	f2 := NewFakeQueryLogger()
+	f3 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f2)
+	testutil.Assert(t, !f2.closed, "expected f2 to be open, got closed")
+	queryExec()
+	engine.SetQueryLogger(f3)
+	testutil.Assert(t, f2.closed, "expected f2 to be closed, got open")
+	testutil.Assert(t, !f3.closed, "expected f3 to be open, got closed")
+	queryExec()
+}
+
+func TestQueryLogger_fields(t *testing.T) {
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	defer cancelCtx()
+	query := engine.newTestQuery(func(ctx context.Context) error {
+		return contextDone(ctx, "test statement execution")
+	})
+
+	res := query.Exec(ctx)
+	testutil.Ok(t, res.Err)
+
+	expected := []string{"foo", "bar"}
+	for i, field := range expected {
+		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
+		testutil.Equals(t, field, v)
+	}
+}
+
+func TestQueryLogger_error(t *testing.T) {
+	opts := EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := NewEngine(opts)
+
+	f1 := NewFakeQueryLogger()
+	engine.SetQueryLogger(f1)
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	ctx = NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
+	defer cancelCtx()
+	testErr := errors.New("failure")
+	query := engine.newTestQuery(func(ctx context.Context) error {
+		return testErr
+	})
+
+	res := query.Exec(ctx)
+	testutil.NotOk(t, res.Err, "query should have failed")
+
+	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
+		testutil.Equals(t, f1.logs[i], field)
 	}
 }
