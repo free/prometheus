@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -46,8 +48,8 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			8,
 		},
 		// Ensures that the page buffer is big enough to fit
-		// an entire page size without panicing.
-		// https://github.com/prometheus/prometheus/tsdb/pull/414
+		// an entire page size without panicking.
+		// https://github.com/prometheus/tsdb/pull/414
 		"bad_header": {
 			1,
 			func(f *os.File) {
@@ -300,7 +302,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = w.Repair(corruptionErr)
 		testutil.Ok(t, err)
 
-		// Ensure that we have a completely clean slate after reapiring.
+		// Ensure that we have a completely clean slate after repairing.
 		testutil.Equals(t, w.segment.Index(), 1) // We corrupted segment 0.
 		testutil.Equals(t, w.donePages, 0)
 
@@ -361,7 +363,7 @@ func TestSegmentMetric(t *testing.T) {
 	w, err := NewSize(nil, nil, dir, segmentSize, false)
 	testutil.Ok(t, err)
 
-	initialSegment := client_testutil.ToFloat64(w.currentSegment)
+	initialSegment := client_testutil.ToFloat64(w.metrics.currentSegment)
 
 	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
 	for i := 0; i < 3; i++ {
@@ -372,12 +374,12 @@ func TestSegmentMetric(t *testing.T) {
 		err = w.Log(buf)
 		testutil.Ok(t, err)
 	}
-	testutil.Assert(t, client_testutil.ToFloat64(w.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
+	testutil.Assert(t, client_testutil.ToFloat64(w.metrics.currentSegment) == initialSegment+1, "segment metric did not increment after segment rotation")
 	testutil.Ok(t, w.Close())
 }
 
 func TestCompression(t *testing.T) {
-	boostrap := func(compressed bool) string {
+	bootstrap := func(compressed bool) string {
 		const (
 			segmentSize = pageSize
 			recordSize  = (pageSize / 2) - recordHeaderSize
@@ -399,17 +401,19 @@ func TestCompression(t *testing.T) {
 		return dirPath
 	}
 
-	dirCompressed := boostrap(true)
+	dirCompressed := bootstrap(true)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dirCompressed))
 	}()
-	dirUnCompressed := boostrap(false)
+	dirUnCompressed := bootstrap(false)
 	defer func() {
 		testutil.Ok(t, os.RemoveAll(dirUnCompressed))
 	}()
 
-	uncompressedSize := testutil.DirSize(t, dirUnCompressed)
-	compressedSize := testutil.DirSize(t, dirCompressed)
+	uncompressedSize, err := fileutil.DirSize(dirUnCompressed)
+	testutil.Ok(t, err)
+	compressedSize, err := fileutil.DirSize(dirCompressed)
+	testutil.Ok(t, err)
 
 	testutil.Assert(t, float64(uncompressedSize)*0.75 > float64(compressedSize), "Compressing zeroes should save at least 25%% space - uncompressedSize: %d, compressedSize: %d", uncompressedSize, compressedSize)
 }

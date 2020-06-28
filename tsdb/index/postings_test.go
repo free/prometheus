@@ -20,6 +20,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -192,7 +193,7 @@ func TestMultiIntersect(t *testing.T) {
 			},
 			res: []uint64{2, 5, 6, 1001},
 		},
-		// One of the reproduceable cases for:
+		// One of the reproducible cases for:
 		// https://github.com/prometheus/prometheus/issues/2616
 		// The initialisation of intersectPostings was moving the iterator forward
 		// prematurely making us miss some postings.
@@ -811,4 +812,64 @@ func TestWithoutPostings(t *testing.T) {
 			testutil.Equals(t, expected, res)
 		})
 	}
+}
+
+func BenchmarkPostings_Stats(b *testing.B) {
+	p := NewMemPostings()
+
+	createPostingsLabelValues := func(name, valuePrefix string, count int) {
+		for n := 1; n < count; n++ {
+			value := fmt.Sprintf("%s-%d", valuePrefix, n)
+			p.Add(uint64(n), labels.FromStrings(name, value))
+		}
+
+	}
+	createPostingsLabelValues("__name__", "metrics_name_can_be_very_big_and_bad", 1e3)
+	for i := 0; i < 20; i++ {
+		createPostingsLabelValues(fmt.Sprintf("host-%d", i), "metrics_name_can_be_very_big_and_bad", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("instance-%d", i), "10.0.IP.", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("job-%d", i), "Small_Job_name", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("err-%d", i), "avg_namespace-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("team-%d", i), "team-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("container_name-%d", i), "pod-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("cluster-%d", i), "newcluster-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("uid-%d", i), "123412312312312311-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("area-%d", i), "new_area_of_work-", 1e3)
+		createPostingsLabelValues(fmt.Sprintf("request_id-%d", i), "owner_name_work-", 1e3)
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		p.Stats("__name__")
+	}
+
+}
+
+func TestMemPostings_Delete(t *testing.T) {
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Add(3, labels.FromStrings("lbl2", "a"))
+
+	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	p.Delete(map[uint64]struct{}{
+		2: {},
+	})
+	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+
+	// Make sure postings gotten before the delete have the old data when
+	// iterated over.
+	expanded, err := ExpandPostings(before)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{1, 2, 3}, expanded)
+
+	// Make sure postings gotten after the delete have the new data when
+	// iterated over.
+	expanded, err = ExpandPostings(after)
+	testutil.Ok(t, err)
+	testutil.Equals(t, []uint64{1, 3}, expanded)
+
+	deleted := p.Get("lbl1", "b")
+	expanded, err = ExpandPostings(deleted)
+	testutil.Ok(t, err)
+	testutil.Assert(t, 0 == len(expanded), "expected empty postings, got %v", expanded)
 }

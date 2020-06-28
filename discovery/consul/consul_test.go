@@ -172,21 +172,47 @@ func TestNonConfiguredService(t *testing.T) {
 
 const (
 	AgentAnswer       = `{"Config": {"Datacenter": "test-dc"}}`
-	ServiceTestAnswer = `[{
-"ID": "b78c2e48-5ef3-1814-31b8-0d880f50471e",
-"Node": "node1",
-"Address": "1.1.1.1",
-"Datacenter": "test-dc",
-"TaggedAddresses": {"lan":"192.168.10.10","wan":"10.0.10.10"},
-"NodeMeta": {"rack_name": "2304"},
-"ServiceID": "test",
-"ServiceName": "test",
-"ServiceMeta": {"version":"1.0.0","environment":"stagging"},
-"ServiceTags": ["tag1"],
-"ServicePort": 3341,
-"CreateIndex": 1,
-"ModifyIndex": 1
+	ServiceTestAnswer = `
+[{
+	"Node": {
+		"ID": "b78c2e48-5ef3-1814-31b8-0d880f50471e",
+		"Node": "node1",
+		"Address": "1.1.1.1",
+		"Datacenter": "test-dc",
+		"TaggedAddresses": {
+			"lan": "192.168.10.10",
+			"wan": "10.0.10.10"
+		},
+		"Meta": {"rack_name": "2304"},
+		"CreateIndex": 1,
+		"ModifyIndex": 1
+	},
+	"Service": {
+		"ID": "test",
+		"Service": "test",
+		"Tags": ["tag1"],
+		"Address": "",
+		"Meta": {"version":"1.0.0","environment":"stagging"},
+		"Port": 3341,
+		"Weights": {
+			"Passing": 1,
+			"Warning": 1
+		},
+		"EnableTagOverride": false,
+		"ProxyDestination": "",
+		"Proxy": {},
+		"Connect": {},
+		"CreateIndex": 1,
+		"ModifyIndex": 1
+	},
+	"Checks": [{
+		"Node": "node1",
+		"CheckID": "serfHealth",
+		"Name": "Serf Health Status",
+		"Status": "passing"
+	}]
 }]`
+
 	ServicesTestAnswer = `{"test": ["tag1"], "other": ["tag2"]}`
 )
 
@@ -197,20 +223,20 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		switch r.URL.String() {
 		case "/v1/agent/self":
 			response = AgentAnswer
-		case "/v1/catalog/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=30000ms":
+		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=600000ms":
 			response = ServiceTestAnswer
-		case "/v1/catalog/service/test?wait=30000ms":
+		case "/v1/health/service/test?wait=600000ms":
 			response = ServiceTestAnswer
-		case "/v1/catalog/service/other?wait=30000ms":
+		case "/v1/health/service/other?wait=600000ms":
 			response = `[]`
-		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=600000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?wait=30000ms":
+		case "/v1/catalog/services?wait=600000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=600000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&wait=30000ms":
+		case "/v1/catalog/services?index=1&wait=600000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
@@ -296,4 +322,48 @@ func TestAllOptions(t *testing.T) {
 	go d.Run(ctx, ch)
 	checkOneTarget(t, <-ch)
 	cancel()
+}
+
+func TestGetDatacenterShouldReturnError(t *testing.T) {
+	for _, tc := range []struct {
+		handler    func(http.ResponseWriter, *http.Request)
+		errMessage string
+	}{
+		{
+			// Define a handler that will return status 500.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(500)
+			},
+			errMessage: "Unexpected response code: 500 ()",
+		},
+		{
+			// Define a handler that will return incorrect response.
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
+			},
+			errMessage: "invalid value '<nil>' for Config.Datacenter",
+		},
+	} {
+		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
+		stuburl, err := url.Parse(stub.URL)
+		testutil.Ok(t, err)
+
+		config := &SDConfig{
+			Server:          stuburl.Host,
+			Token:           "fake-token",
+			RefreshInterval: model.Duration(1 * time.Second),
+		}
+		defer stub.Close()
+		d := newDiscovery(t, config)
+
+		// Should be empty if not initialized.
+		testutil.Equals(t, "", d.clientDatacenter)
+
+		err = d.getDatacenter()
+
+		// An error should be returned.
+		testutil.Equals(t, tc.errMessage, err.Error())
+		// Should still be empty.
+		testutil.Equals(t, "", d.clientDatacenter)
+	}
 }
